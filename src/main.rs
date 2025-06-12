@@ -1,8 +1,10 @@
+mod jj;
 mod model;
 mod update;
 mod view;
 
-use model::State;
+use crate::jj::Jj;
+use crate::model::{Model, State};
 
 use anyhow::Result;
 use ratatui::{
@@ -37,10 +39,12 @@ pub fn install_panic_hook() {
 }
 
 fn main() -> Result<()> {
-    install_panic_hook();
-    let mut terminal = init_terminal()?;
-    let mut model = model::Model::new(vec!["line1", "line2", "line3"]);
+    let jj = Jj::load()?;
+    let mut model = Model::new(vec!["line1", "line2", "line3"]);
 
+    install_panic_hook();
+
+    let mut terminal = init_terminal()?;
     while model.state != State::Quit {
         terminal.draw(|f| view::view(&mut model, f))?;
         update::update(&mut model)?;
