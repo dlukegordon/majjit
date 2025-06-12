@@ -1,20 +1,30 @@
-use crate::model::{Message, Model, State};
+use crate::model::{Model, State};
 
 use anyhow::Result;
-use ratatui::crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
+
+const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
+
+#[derive(PartialEq)]
+enum Message {
+    Quit,
+    SelectNextCommit,
+    SelectPrevCommit,
+}
 
 fn handle_key(key: event::KeyEvent) -> Option<Message> {
     match key.code {
-        KeyCode::Char('j') => Some(Message::Increment),
-        KeyCode::Char('k') => Some(Message::Decrement),
         KeyCode::Char('q') => Some(Message::Quit),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
+        KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextCommit),
+        KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevCommit),
         _ => None,
     }
 }
 
-pub fn handle_event(_: &Model) -> Result<Option<Message>> {
-    if event::poll(Duration::from_millis(250))? {
+fn handle_event(_: &Model) -> Result<Option<Message>> {
+    if event::poll(EVENT_POLL_DURATION)? {
         if let Event::Key(key) = event::read()? {
             if key.kind == event::KeyEventKind::Press {
                 return Ok(handle_key(key));
@@ -24,23 +34,28 @@ pub fn handle_event(_: &Model) -> Result<Option<Message>> {
     Ok(None)
 }
 
-pub fn handle_msg(model: &mut Model, msg: Message) -> Option<Message> {
+fn handle_msg(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
-        Message::Increment => {
-            model.counter += 1;
-            if model.counter > 50 {
-                return Some(Message::Reset);
-            }
-        }
-        Message::Decrement => {
-            model.counter -= 1;
-            if model.counter < -50 {
-                return Some(Message::Reset);
-            }
-        }
-        Message::Reset => model.counter = 0,
         Message::Quit => {
             model.state = State::Quit;
+        }
+        Message::SelectNextCommit => {
+            let selected = model.commit_list_state.selected()?;
+            let next = if selected >= model.commits.len() - 1 {
+                0
+            } else {
+                selected + 1
+            };
+            model.commit_list_state.select(Some(next));
+        }
+        Message::SelectPrevCommit => {
+            let selected = model.commit_list_state.selected()?;
+            let prev = if selected == 0 {
+                model.commits.len() - 1
+            } else {
+                selected - 1
+            };
+            model.commit_list_state.select(Some(prev));
         }
     };
     None

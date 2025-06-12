@@ -39,7 +39,7 @@ pub fn install_panic_hook() {
 fn main() -> Result<()> {
     install_panic_hook();
     let mut terminal = init_terminal()?;
-    let mut model = model::Model::default();
+    let mut model = model::Model::new(vec!["line1", "line2", "line3"]);
 
     while model.state != State::Quit {
         terminal.draw(|f| view::view(&mut model, f))?;

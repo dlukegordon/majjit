@@ -1,20 +1,27 @@
-#[derive(Debug, Default)]
-pub struct Model {
-    pub counter: i32,
-    pub state: State,
-}
+use ratatui::widgets::ListState;
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum State {
-    #[default]
     Running,
     Quit,
 }
 
-#[derive(PartialEq)]
-pub enum Message {
-    Increment,
-    Decrement,
-    Reset,
-    Quit,
+#[derive(Debug)]
+pub struct Model<'a> {
+    pub state: State,
+    pub commits: Vec<&'a str>,
+    pub commit_list_state: ListState,
+}
+
+impl<'a> Model<'a> {
+    pub fn new(list: Vec<&'a str>) -> Self {
+        let mut commit_list_state = ListState::default();
+        commit_list_state.select(Some(0));
+
+        Self {
+            state: State::Running,
+            commits: list,
+            commit_list_state,
+        }
+    }
 }
