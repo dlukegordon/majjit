@@ -5,9 +5,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-chrono = "0.4.41"
 clap = { version = "4.5.40", features = ["derive"] }
 crossterm = "0.29.0"
-jj-cli = "0.30.0"
-jj-lib = "0.30.0"
 ratatui = "0.29.0"

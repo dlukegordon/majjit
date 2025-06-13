@@ -5,16 +5,7 @@ mod tui;
 mod update;
 mod view;
 
-use crate::cli::Args;
-use crate::jj::Jj;
-
 use anyhow::Result;
-use clap::Parser;
+use jj::Jj;
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-    let jj = Jj::load(&args)?;
-    jj.get_commits(&args.revisions)?;
-    tui::run(&args, jj)?;
-    Ok(())
-}
+fn main() -> Result<()> {}
