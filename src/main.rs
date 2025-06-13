@@ -14,6 +14,7 @@ use clap::Parser;
 fn main() -> Result<()> {
     let args = Args::parse();
     let jj = Jj::load(&args)?;
+    jj.get_commits(&args.revisions)?;
     tui::run(&args, jj)?;
     Ok(())
 }

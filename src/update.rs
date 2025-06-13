@@ -13,14 +13,12 @@ enum Message {
     SelectPrevCommit,
 }
 
-fn handle_key(key: event::KeyEvent) -> Option<Message> {
-    match key.code {
-        KeyCode::Char('q') => Some(Message::Quit),
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
-        KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextCommit),
-        KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevCommit),
-        _ => None,
+pub fn update(model: &mut Model) -> Result<()> {
+    let mut current_msg = handle_event(model)?;
+    while let Some(msg) = current_msg {
+        current_msg = handle_msg(model, msg);
     }
+    Ok(())
 }
 
 fn handle_event(_: &Model) -> Result<Option<Message>> {
@@ -32,6 +30,16 @@ fn handle_event(_: &Model) -> Result<Option<Message>> {
         }
     }
     Ok(None)
+}
+
+fn handle_key(key: event::KeyEvent) -> Option<Message> {
+    match key.code {
+        KeyCode::Char('q') => Some(Message::Quit),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
+        KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextCommit),
+        KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevCommit),
+        _ => None,
+    }
 }
 
 fn handle_msg(model: &mut Model, msg: Message) -> Option<Message> {
@@ -59,12 +67,4 @@ fn handle_msg(model: &mut Model, msg: Message) -> Option<Message> {
         }
     };
     None
-}
-
-pub fn update(model: &mut Model) -> Result<()> {
-    let mut current_msg = handle_event(model)?;
-    while let Some(msg) = current_msg {
-        current_msg = handle_msg(model, msg);
-    }
-    Ok(())
 }

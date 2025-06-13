@@ -15,6 +15,22 @@ use ratatui::{
 };
 use std::{io::stdout, panic};
 
+pub fn run(args: &Args, jj: Jj) -> Result<()> {
+    let mut model = Model::new(vec!["line1", "line2", "line3"]);
+    let commits = jj.get_commits(&args.revisions);
+
+    install_panic_hook();
+
+    let mut terminal = init_terminal()?;
+    while model.state != State::Quit {
+        terminal.draw(|f| view(&mut model, f))?;
+        update(&mut model)?;
+    }
+
+    restore_terminal()?;
+    Ok(())
+}
+
 fn init_terminal() -> Result<Terminal<impl Backend>> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
@@ -34,19 +50,4 @@ fn install_panic_hook() {
         restore_terminal().unwrap();
         original_hook(panic_info);
     }));
-}
-
-pub fn run(args: &Args, jj: Jj) -> Result<()> {
-    let mut model = Model::new(vec!["line1", "line2", "line3"]);
-
-    install_panic_hook();
-
-    let mut terminal = init_terminal()?;
-    while model.state != State::Quit {
-        terminal.draw(|f| view(&mut model, f))?;
-        update(&mut model)?;
-    }
-
-    restore_terminal()?;
-    Ok(())
 }

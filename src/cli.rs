@@ -15,5 +15,5 @@ pub struct Args {
         value_name = "REVSETS",
         default_value = "all()"
     )]
-    revisions: String,
+    pub revisions: String,
 }
