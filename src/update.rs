@@ -48,22 +48,22 @@ fn handle_msg(model: &mut Model, msg: Message) -> Option<Message> {
             model.state = State::Quit;
         }
         Message::SelectNextCommit => {
-            let selected = model.commit_list_state.selected()?;
-            let next = if selected >= model.commits.len() - 1 {
+            let selected = model.log_list_state.selected()?;
+            let next = if selected >= model.log_list.len() - 1 {
                 0
             } else {
                 selected + 1
             };
-            model.commit_list_state.select(Some(next));
+            model.log_list_state.select(Some(next));
         }
         Message::SelectPrevCommit => {
-            let selected = model.commit_list_state.selected()?;
+            let selected = model.log_list_state.selected()?;
             let prev = if selected == 0 {
-                model.commits.len() - 1
+                model.log_list.len() - 1
             } else {
                 selected - 1
             };
-            model.commit_list_state.select(Some(prev));
+            model.log_list_state.select(Some(prev));
         }
     };
     None

@@ -2,14 +2,31 @@ use crate::model::Model;
 
 use ratatui::{
     Frame,
-    style::{Style, Stylize},
-    widgets::List,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::{List, Paragraph},
 };
 
 pub fn view(model: &mut Model, frame: &mut Frame) {
-    let commit_list = List::new(model.commits.clone())
-        .highlight_style(Style::new().bold())
-        .highlight_symbol(">");
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // Header paragraph
+            Constraint::Min(0),    // Rest for the list
+        ])
+        .split(frame.area());
 
-    frame.render_stateful_widget(commit_list, frame.area(), &mut model.commit_list_state);
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("revset: ", Style::default().fg(Color::Blue)),
+        Span::styled(model.jj.revset(), Style::default().fg(Color::Green)),
+    ]));
+
+    // Create commit list
+    let commit_list =
+        List::new(model.log_list.clone()).highlight_style(Style::new().bold().bg(Color::Black));
+
+    // Render both widgets
+    frame.render_widget(header, chunks[0]);
+    frame.render_stateful_widget(commit_list, chunks[1], &mut model.log_list_state);
 }

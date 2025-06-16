@@ -1,4 +1,3 @@
-use crate::cli::Args;
 use crate::jj::Jj;
 use crate::model::{Model, State};
 use crate::update::update;
@@ -15,9 +14,8 @@ use ratatui::{
 };
 use std::{io::stdout, panic};
 
-pub fn run(args: &Args, jj: Jj) -> Result<()> {
-    let mut model = Model::new(vec!["line1", "line2", "line3"]);
-    let commits = jj.get_commits(&args.revisions);
+pub fn run(jj: Jj) -> Result<()> {
+    let mut model = Model::new(jj)?;
 
     install_panic_hook();
 
