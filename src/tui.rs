@@ -15,17 +15,21 @@ use ratatui::{
 use std::{io::stdout, panic};
 
 pub fn run(jj: Jj) -> Result<()> {
-    let mut model = Model::new(jj)?;
-
     install_panic_hook();
+    let terminal = init_terminal()?;
 
-    let mut terminal = init_terminal()?;
+    let res = main_loop(terminal, jj);
+
+    restore_terminal()?;
+    res
+}
+
+fn main_loop(mut terminal: Terminal<impl Backend>, jj: Jj) -> Result<()> {
+    let mut model = Model::new(jj)?;
     while model.state != State::Quit {
         terminal.draw(|f| view(&mut model, f))?;
         update(&mut model)?;
     }
-
-    restore_terminal()?;
     Ok(())
 }
 

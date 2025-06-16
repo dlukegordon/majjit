@@ -1,6 +1,6 @@
-use crate::jj::Jj;
+use crate::jj::{Jj, TreePosition};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use ratatui::{text::Text, widgets::ListState};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -15,6 +15,7 @@ pub struct Model {
     pub jj: Jj,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
+    pub log_list_tree_positions: Vec<TreePosition>,
 }
 
 impl Model {
@@ -27,14 +28,28 @@ impl Model {
             jj,
             log_list: Vec::new(),
             log_list_state,
+            log_list_tree_positions: Vec::new(),
         };
+
         model.update_log_list()?;
 
         Ok(model)
     }
 
     fn update_log_list(&mut self) -> Result<()> {
-        self.log_list = self.jj.get_text_vec()?;
+        (self.log_list, self.log_list_tree_positions) = self.jj.render_log()?;
+        Ok(())
+    }
+
+    pub fn toggle_fold(&mut self, list_idx: usize) -> Result<()> {
+        let tree_pos = self
+            .log_list_tree_positions
+            .get(list_idx)
+            .ok_or_else(|| anyhow!("Cannot get tree position for lost list index {list_idx}"))?;
+
+        self.jj.toggle_fold(tree_pos)?;
+        self.update_log_list()?;
+
         Ok(())
     }
 }
