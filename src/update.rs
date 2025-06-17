@@ -56,7 +56,7 @@ fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
         }
         Message::SelectNextLogItem => {
             let next = if list_idx >= model.log_list.len() - 1 {
-                0
+                list_idx
             } else {
                 list_idx + 1
             };
@@ -64,7 +64,7 @@ fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
         }
         Message::SelectPrevLogItem => {
             let prev = if list_idx == 0 {
-                model.log_list.len() - 1
+                list_idx
             } else {
                 list_idx - 1
             };
