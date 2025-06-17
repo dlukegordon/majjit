@@ -74,7 +74,7 @@ fn get_commits(repository: &str, revset: &str) -> Result<Vec<Commit>> {
     Ok(commits)
 }
 
-fn get_file_diffs(repository: &str, change_id: &str, indent: &str) -> Result<Vec<FileDiff>> {
+fn get_file_diffs(repository: &str, change_id: &str, graph_indent: &str) -> Result<Vec<FileDiff>> {
     let output = run_jj_diff_summary(repository, change_id)?;
     let lines: Vec<&str> = output.trim().lines().collect();
 
@@ -84,7 +84,7 @@ fn get_file_diffs(repository: &str, change_id: &str, indent: &str) -> Result<Vec
             repository.to_string(),
             change_id.to_string(),
             line.to_string(),
-            indent.to_string(),
+            graph_indent.to_string(),
         )?);
     }
 
@@ -95,17 +95,73 @@ fn get_file_diff_hunks(
     repository: &str,
     change_id: &str,
     file: &str,
-    indent: &str,
-) -> Result<Vec<FileDiffHunk>> {
+    graph_indent: &str,
+) -> Result<Vec<DiffHunk>> {
     let output = run_jj_diff_file(repository, change_id, file)?;
-    let lines: Vec<&str> = output.trim().lines().collect();
+    let output_lines: Vec<&str> = output.trim().lines().collect();
 
-    let mut file_diff_hunks = Vec::new();
-    for line in lines {
-        file_diff_hunks.push(FileDiffHunk::new(line.to_string(), indent.to_string())?);
+    let hunk_regex = Regex::new(r"@@ -(\d+),(\d+) \+(\d+),(\d+) @@")?;
+    let mut diff_hunks = Vec::new();
+    let mut maybe_diff_hunk: Option<DiffHunk> = None;
+
+    for line in output_lines {
+        let clean_line = strip_ansi(line);
+        let maybe_captures = hunk_regex.captures(&clean_line);
+
+        match maybe_captures {
+            Some(captures) => {
+                let old_start = captures
+                    .get(1)
+                    .ok_or_else(|| anyhow!("Cannot parse hunk old start"))?
+                    .as_str()
+                    .parse()?;
+                let old_count = captures
+                    .get(2)
+                    .ok_or_else(|| anyhow!("Cannot parse hunk old count"))?
+                    .as_str()
+                    .parse()?;
+                let new_start = captures
+                    .get(3)
+                    .ok_or_else(|| anyhow!("Cannot parse hunk new start"))?
+                    .as_str()
+                    .parse()?;
+                let new_count = captures
+                    .get(4)
+                    .ok_or_else(|| anyhow!("Cannot parse hunk new count"))?
+                    .as_str()
+                    .parse()?;
+
+                if let Some(diff_hunk) = maybe_diff_hunk {
+                    diff_hunks.push(diff_hunk)
+                };
+
+                maybe_diff_hunk = Some(DiffHunk::new(
+                    line.to_string(),
+                    graph_indent.to_string(),
+                    Vec::new(),
+                    old_start,
+                    old_count,
+                    new_start,
+                    new_count,
+                ))
+            }
+            None => {
+                if let Some(mut diff_hunk) = maybe_diff_hunk {
+                    diff_hunk.diff_hunk_lines.push(DiffHunkLine::new(
+                        line.to_string(),
+                        graph_indent.to_string(),
+                    ));
+                    maybe_diff_hunk = Some(diff_hunk);
+                }
+            }
+        }
     }
 
-    Ok(file_diff_hunks)
+    if let Some(diff_hunk) = maybe_diff_hunk.take() {
+        diff_hunks.push(diff_hunk)
+    };
+
+    Ok(diff_hunks)
 }
 
 fn strip_ansi(pretty_str: &str) -> String {
@@ -135,61 +191,148 @@ impl Jj {
         &self.revset
     }
 
-    pub fn render_log(&self) -> Result<(Vec<Text<'static>>, Vec<TreePosition>)> {
+    pub fn flatten_log(&self) -> Result<(Vec<Text<'static>>, Vec<TreePosition>)> {
         let mut log_list = Vec::new();
         let mut log_list_tree_positions = Vec::new();
 
         for (commit_idx, commit) in self.log.iter().enumerate() {
-            log_list.push(commit.pretty_string.into_text()?);
-            log_list_tree_positions.push(TreePosition {
+            Self::flatten_commit(
+                commit,
                 commit_idx,
-                file_diff_idx: None,
-                file_diff_hunk_idx: None,
-            });
-
-            if !commit.unfolded {
-                continue;
-            }
-
-            if let Some(file_diffs) = &commit.file_diffs {
-                for (file_diff_idx, file_diff) in file_diffs.iter().enumerate() {
-                    log_list.push(file_diff.pretty_string.into_text()?);
-                    log_list_tree_positions.push(TreePosition {
-                        commit_idx,
-                        file_diff_idx: Some(file_diff_idx),
-                        file_diff_hunk_idx: None,
-                    });
-
-                    if !file_diff.unfolded {
-                        continue;
-                    }
-
-                    if let Some(file_diff_hunks) = &file_diff.file_diff_hunks {
-                        for (file_diff_hunk_idx, file_diff_hunk) in
-                            file_diff_hunks.iter().enumerate()
-                        {
-                            log_list.push(file_diff_hunk.pretty_string.into_text()?);
-                            log_list_tree_positions.push(TreePosition {
-                                commit_idx,
-                                file_diff_idx: Some(file_diff_idx),
-                                file_diff_hunk_idx: Some(file_diff_hunk_idx),
-                            });
-                        }
-                    }
-                }
-            }
+                &mut log_list,
+                &mut log_list_tree_positions,
+            )?;
         }
 
         Ok((log_list, log_list_tree_positions))
     }
 
-    pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<()> {
-        let commit_idx = tree_pos.commit_idx;
-        if commit_idx >= self.log.len() {
-            bail!("Cannot get commit for tree position {tree_pos:?}");
-        }
-        let commit = &mut self.log[commit_idx];
+    fn flatten_commit(
+        commit: &Commit,
+        commit_idx: usize,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        log_list.push(commit.render()?);
+        log_list_tree_positions.push(TreePosition {
+            commit_idx,
+            file_diff_idx: None,
+            diff_hunk_idx: None,
+            diff_hunk_line_idx: None,
+        });
 
+        if !commit.unfolded {
+            return Ok(());
+        }
+
+        if let Some(file_diffs) = &commit.file_diffs {
+            for (file_diff_idx, file_diff) in file_diffs.iter().enumerate() {
+                Self::flatten_file_diff(
+                    file_diff,
+                    commit_idx,
+                    file_diff_idx,
+                    log_list,
+                    log_list_tree_positions,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn flatten_file_diff(
+        file_diff: &FileDiff,
+        commit_idx: usize,
+        file_diff_idx: usize,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        log_list.push(file_diff.render()?);
+        log_list_tree_positions.push(TreePosition {
+            commit_idx,
+            file_diff_idx: Some(file_diff_idx),
+            diff_hunk_idx: None,
+            diff_hunk_line_idx: None,
+        });
+
+        if !file_diff.unfolded {
+            return Ok(());
+        }
+
+        if let Some(diff_hunks) = &file_diff.diff_hunks {
+            for (diff_hunk_idx, diff_hunk) in diff_hunks.iter().enumerate() {
+                Self::flatten_diff_hunk(
+                    diff_hunk,
+                    commit_idx,
+                    file_diff_idx,
+                    diff_hunk_idx,
+                    log_list,
+                    log_list_tree_positions,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn flatten_diff_hunk(
+        diff_hunk: &DiffHunk,
+        commit_idx: usize,
+        file_diff_idx: usize,
+        diff_hunk_idx: usize,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        log_list.push(diff_hunk.render()?);
+        log_list_tree_positions.push(TreePosition {
+            commit_idx,
+            file_diff_idx: Some(file_diff_idx),
+            diff_hunk_idx: Some(diff_hunk_idx),
+            diff_hunk_line_idx: None,
+        });
+
+        if !diff_hunk.unfolded {
+            return Ok(());
+        }
+
+        for (diff_hunk_line_idx, diff_hunk_line) in diff_hunk.diff_hunk_lines.iter().enumerate() {
+            Self::flatten_diff_hunk_line(
+                diff_hunk_line,
+                commit_idx,
+                file_diff_idx,
+                diff_hunk_idx,
+                diff_hunk_line_idx,
+                log_list,
+                log_list_tree_positions,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn flatten_diff_hunk_line(
+        diff_hunk_line: &DiffHunkLine,
+        commit_idx: usize,
+        file_diff_idx: usize,
+        diff_hunk_idx: usize,
+        diff_hunk_line_idx: usize,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        log_list.push(diff_hunk_line.render()?);
+        log_list_tree_positions.push(TreePosition {
+            commit_idx,
+            file_diff_idx: Some(file_diff_idx),
+            diff_hunk_idx: Some(diff_hunk_idx),
+            diff_hunk_line_idx: Some(diff_hunk_line_idx),
+        });
+
+        Ok(())
+    }
+
+    pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<()> {
+        // Traverse to commit
+        let commit = &mut self.log[tree_pos.commit_idx];
         let file_diff_idx = match tree_pos.file_diff_idx {
             None => {
                 commit.toggle_fold()?;
@@ -198,14 +341,29 @@ impl Jj {
             Some(file_diff_idx) => file_diff_idx,
         };
 
-        match &mut commit.file_diffs {
+        // Traverse to file diff
+        let file_diff = match &mut commit.file_diffs {
             None => {
                 bail!("Trying to get unloaded file diffs for commit");
             }
-            Some(file_diffs) => {
-                file_diffs[file_diff_idx].toggle_fold()?;
-            }
+            Some(file_diffs) => &mut file_diffs[file_diff_idx],
         };
+        let diff_hunk_idx = match tree_pos.diff_hunk_idx {
+            None => {
+                file_diff.toggle_fold()?;
+                return Ok(());
+            }
+            Some(diff_hunk_idx) => diff_hunk_idx,
+        };
+
+        // Traverse to diff hunk
+        let diff_hunk = match &mut file_diff.diff_hunks {
+            None => {
+                bail!("Trying to get unloaded diff hunks for file diff");
+            }
+            Some(diff_hunks) => &mut diff_hunks[diff_hunk_idx],
+        };
+        diff_hunk.toggle_fold();
 
         Ok(())
     }
@@ -215,7 +373,8 @@ impl Jj {
 pub struct TreePosition {
     pub commit_idx: usize,
     pub file_diff_idx: Option<usize>,
-    pub file_diff_hunk_idx: Option<usize>,
+    pub diff_hunk_idx: Option<usize>,
+    pub diff_hunk_line_idx: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -224,7 +383,7 @@ struct Commit {
     change_id: String,
     commit_id: String,
     pretty_string: String,
-    indent: String,
+    graph_indent: String,
     unfolded: bool,
     file_diffs: Option<Vec<FileDiff>>,
 }
@@ -234,26 +393,26 @@ impl Commit {
         let clean_string = strip_ansi(&pretty_string);
         let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8})\n([ │├─╯]*)")?;
 
-        let caps = re
+        let captures = re
             .captures(&clean_string)
             .ok_or_else(|| anyhow!("Cannot parse commit string"))?;
-        let change_id = caps
+        let change_id = captures
             .get(1)
             .ok_or_else(|| anyhow!("Cannot parse commit change id"))?
             .as_str()
             .into();
-        let commit_id = caps
+        let commit_id = captures
             .get(2)
             .ok_or_else(|| anyhow!("Cannot parse commit id"))?
             .as_str()
             .into();
 
-        let graph_chars: String = caps
+        let graph_chars: String = captures
             .get(3)
             .ok_or_else(|| anyhow!("Cannot parse indent prefix"))?
             .as_str()
             .into();
-        let indent: String = graph_chars
+        let graph_indent: String = graph_chars
             .chars()
             .map(|c| match c {
                 '│' | ' ' => c,
@@ -267,10 +426,14 @@ impl Commit {
             change_id,
             commit_id,
             pretty_string,
-            indent,
+            graph_indent,
             unfolded: false,
             file_diffs: None,
         })
+    }
+
+    pub fn render(&self) -> Result<Text<'static>> {
+        Ok(self.pretty_string.into_text()?)
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -280,19 +443,11 @@ impl Commit {
         }
 
         if let None = self.file_diffs {
-            let file_diffs = get_file_diffs(&self.repository, &self.change_id, &self.indent)?;
+            let file_diffs = get_file_diffs(&self.repository, &self.change_id, &self.graph_indent)?;
             self.file_diffs = Some(file_diffs);
         }
 
         Ok(())
-    }
-}
-
-impl TryFrom<&Commit> for Text<'_> {
-    type Error = ansi_to_tui::Error;
-
-    fn try_from(commit: &Commit) -> Result<Self, Self::Error> {
-        commit.pretty_string.into_text()
     }
 }
 
@@ -303,9 +458,9 @@ struct FileDiff {
     path: String,
     status: FileDiffStatus,
     pretty_string: String,
-    indent: String,
+    graph_indent: String,
     unfolded: bool,
-    file_diff_hunks: Option<Vec<FileDiffHunk>>,
+    diff_hunks: Option<Vec<DiffHunk>>,
 }
 
 impl FileDiff {
@@ -313,26 +468,24 @@ impl FileDiff {
         repository: String,
         change_id: String,
         pretty_string: String,
-        indent: String,
+        graph_indent: String,
     ) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
         let re = Regex::new(r"^([MAD])\s+(.+)$").unwrap();
 
-        let caps = re
+        let captures = re
             .captures(&clean_string)
             .ok_or_else(|| anyhow!("Cannot parse file diff string: {clean_string}"))?;
-        let status = caps
+        let status = captures
             .get(1)
             .ok_or_else(|| anyhow!("Cannot parse file diff status"))?
             .as_str()
             .parse::<FileDiffStatus>()?;
-        let path = caps
+        let path = captures
             .get(2)
             .ok_or_else(|| anyhow!("Cannot parse file diff path"))?
             .as_str()
             .into();
-
-        let pretty_string = format!("{indent}  {pretty_string}");
 
         Ok(Self {
             repository,
@@ -340,10 +493,14 @@ impl FileDiff {
             path,
             status,
             pretty_string,
-            indent,
+            graph_indent,
             unfolded: false,
-            file_diff_hunks: None,
+            diff_hunks: None,
         })
+    }
+
+    pub fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0} {1}", self.graph_indent, self.pretty_string).into_text()?)
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -352,21 +509,17 @@ impl FileDiff {
             return Ok(());
         }
 
-        if let None = self.file_diff_hunks {
-            let file_diff_hunks =
-                get_file_diff_hunks(&self.repository, &self.change_id, &self.path, &self.indent)?;
-            self.file_diff_hunks = Some(file_diff_hunks);
+        if let None = self.diff_hunks {
+            let diff_hunks = get_file_diff_hunks(
+                &self.repository,
+                &self.change_id,
+                &self.path,
+                &self.graph_indent,
+            )?;
+            self.diff_hunks = Some(diff_hunks);
         }
 
         Ok(())
-    }
-}
-
-impl TryFrom<&FileDiff> for Text<'_> {
-    type Error = ansi_to_tui::Error;
-
-    fn try_from(file_diff: &FileDiff) -> Result<Self, Self::Error> {
-        file_diff.pretty_string.into_text()
     }
 }
 
@@ -391,21 +544,67 @@ impl std::str::FromStr for FileDiffStatus {
 }
 
 #[derive(Debug)]
-struct FileDiffHunk {
+struct DiffHunk {
     pretty_string: String,
+    graph_indent: String,
+    unfolded: bool,
+    old_start: u32,
+    old_count: u32,
+    new_start: u32,
+    new_count: u32,
+    diff_hunk_lines: Vec<DiffHunkLine>,
 }
 
-impl FileDiffHunk {
-    pub fn new(pretty_string: String, indent: String) -> Result<Self> {
-        let pretty_string = format!("{indent}    {pretty_string}");
-        Ok(Self { pretty_string })
+impl DiffHunk {
+    fn new(
+        pretty_string: String,
+        graph_indent: String,
+        lines: Vec<String>,
+        old_start: u32,
+        old_count: u32,
+        new_start: u32,
+        new_count: u32,
+    ) -> Self {
+        let diff_hunk_lines = lines
+            .into_iter()
+            .map(|line| DiffHunkLine::new(line, graph_indent.clone()))
+            .collect();
+        Self {
+            pretty_string,
+            graph_indent,
+            unfolded: true,
+            old_start,
+            old_count,
+            new_start,
+            new_count,
+            diff_hunk_lines,
+        }
+    }
+
+    pub fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
+    }
+
+    fn toggle_fold(&mut self) -> () {
+        self.unfolded = !self.unfolded;
     }
 }
 
-impl TryFrom<&FileDiffHunk> for Text<'_> {
-    type Error = ansi_to_tui::Error;
+#[derive(Debug)]
+struct DiffHunkLine {
+    pretty_string: String,
+    graph_indent: String,
+}
 
-    fn try_from(file_diff_hunk: &FileDiffHunk) -> Result<Self, Self::Error> {
-        file_diff_hunk.pretty_string.into_text()
+impl DiffHunkLine {
+    fn new(pretty_string: String, graph_indent: String) -> Self {
+        Self {
+            pretty_string,
+            graph_indent,
+        }
+    }
+
+    pub fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0}   {1}", self.graph_indent, self.pretty_string).into_text()?)
     }
 }

@@ -37,7 +37,7 @@ impl Model {
     }
 
     fn update_log_list(&mut self) -> Result<()> {
-        (self.log_list, self.log_list_tree_positions) = self.jj.render_log()?;
+        (self.log_list, self.log_list_tree_positions) = self.jj.flatten_log()?;
         Ok(())
     }
 
