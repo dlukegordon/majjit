@@ -1,7 +1,7 @@
 use crate::model::{Model, State};
 
 use anyhow::{Result, bail};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use std::time::Duration;
 
 const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
@@ -24,10 +24,16 @@ pub fn update(model: &mut Model) -> Result<()> {
 
 fn handle_event(_: &Model) -> Result<Option<Message>> {
     if event::poll(EVENT_POLL_DURATION)? {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == event::KeyEventKind::Press {
-                return Ok(handle_key(key));
+        match event::read()? {
+            Event::Key(key) => {
+                if key.kind == event::KeyEventKind::Press {
+                    return Ok(handle_key(key));
+                }
             }
+            Event::Mouse(mouse) => {
+                return Ok(handle_mouse(mouse));
+            }
+            _ => {}
         }
     }
     Ok(None)
@@ -40,6 +46,14 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextLogItem),
         KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevLogItem),
         KeyCode::Tab => Some(Message::ToggleLogListFold),
+        _ => None,
+    }
+}
+
+fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
+    match mouse.kind {
+        MouseEventKind::ScrollDown => Some(Message::SelectNextLogItem),
+        MouseEventKind::ScrollUp => Some(Message::SelectPrevLogItem),
         _ => None,
     }
 }

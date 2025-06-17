@@ -4,13 +4,14 @@ use crate::update::update;
 use crate::view::view;
 
 use anyhow::Result;
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
-    crossterm::{
-        ExecutableCommand,
-        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-    },
 };
 use std::{io::stdout, panic};
 
@@ -35,13 +36,13 @@ fn main_loop(mut terminal: Terminal<impl Backend>, jj: Jj) -> Result<()> {
 
 fn init_terminal() -> Result<Terminal<impl Backend>> {
     enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
+    execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     Ok(terminal)
 }
 
 fn restore_terminal() -> Result<()> {
-    stdout().execute(LeaveAlternateScreen)?;
+    execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     disable_raw_mode()?;
     Ok(())
 }
