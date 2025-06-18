@@ -13,7 +13,7 @@ use clap::Parser;
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let jj = Jj::init(args.repository, args.revisions)?;
+    let jj = Jj::new(args.repository, args.revisions)?;
     tui::run(jj)?;
     Ok(())
 }
