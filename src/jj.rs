@@ -471,7 +471,7 @@ impl FileDiff {
         graph_indent: String,
     ) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
-        let re = Regex::new(r"^([MAD])\s+(.+)$").unwrap();
+        let re = Regex::new(r"^([MADR])\s+(.+)$").unwrap();
 
         let captures = re
             .captures(&clean_string)
@@ -481,11 +481,31 @@ impl FileDiff {
             .ok_or_else(|| anyhow!("Cannot parse file diff status"))?
             .as_str()
             .parse::<FileDiffStatus>()?;
-        let path = captures
+        let path: String = captures
             .get(2)
             .ok_or_else(|| anyhow!("Cannot parse file diff path"))?
             .as_str()
             .into();
+
+        let path = match status {
+            FileDiffStatus::Renamed => {
+                let rename_regex = Regex::new(r"^(.+)\{(.+?)\s*=>\s*(.+?)\}$").unwrap();
+                let captures = rename_regex
+                    .captures(&path)
+                    .ok_or_else(|| anyhow!("Cannot parse file diff rename paths: {path}"))?;
+                let path_start = captures
+                    .get(1)
+                    .ok_or_else(|| anyhow!("Cannot parse file diff rename path start"))?
+                    .as_str();
+                let path_new_end = captures
+                    .get(3)
+                    .ok_or_else(|| anyhow!("Cannot parse file diff rename path new end"))?
+                    .as_str();
+
+                format!("{path_start}{path_new_end}")
+            }
+            _ => path,
+        };
 
         Ok(Self {
             repository,
@@ -528,6 +548,7 @@ enum FileDiffStatus {
     Modified,
     Added,
     Deleted,
+    Renamed,
 }
 
 impl std::str::FromStr for FileDiffStatus {
@@ -538,6 +559,7 @@ impl std::str::FromStr for FileDiffStatus {
             "M" => Ok(FileDiffStatus::Modified),
             "A" => Ok(FileDiffStatus::Added),
             "D" => Ok(FileDiffStatus::Deleted),
+            "R" => Ok(FileDiffStatus::Renamed),
             _ => Err(anyhow!("Unknown file diff status: {}", s)),
         }
     }
