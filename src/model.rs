@@ -45,9 +45,10 @@ impl Model {
         let tree_pos = self
             .log_list_tree_positions
             .get(list_idx)
-            .ok_or_else(|| anyhow!("Cannot get tree position for lost list index {list_idx}"))?;
+            .ok_or_else(|| anyhow!("Cannot get tree position for log list index {list_idx}"))?;
 
-        self.jj.toggle_fold(tree_pos)?;
+        let log_list_selected_idx = self.jj.toggle_fold(tree_pos)?;
+        self.log_list_state.select(Some(log_list_selected_idx));
         self.update_log_list()?;
 
         Ok(())
