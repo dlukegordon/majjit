@@ -13,6 +13,7 @@ pub struct Jj {
 
 impl Jj {
     pub fn new(repository: String, revset: String) -> Result<Self> {
+        Self::ensure_valid_repo(&repository)?;
         let log = Commit::load_all(&repository, &revset)?;
         let jj = Jj {
             _repository: repository,
@@ -20,6 +21,25 @@ impl Jj {
             log,
         };
         Ok(jj)
+    }
+
+    pub fn ensure_valid_repo(repository: &str) -> Result<()> {
+        let output = Command::new("jj")
+            .env("JJ_CONFIG", "/dev/null")
+            .arg("--repository")
+            .arg(repository)
+            .arg("workspace")
+            .arg("root")
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            let err_msg = stderr.strip_prefix("Error: ").unwrap_or(&stderr);
+            bail!("{}", err_msg);
+        }
     }
 
     fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
@@ -257,7 +277,7 @@ impl Commit {
                     )?);
                 }
                 [line1] => {
-                    ensure!(line1.contains("root()"), "Last line is not the root commit");
+                    // ensure!(line1.contains("root()"), "Last line is not the root commit");
                     commits.push(Self::new(repository.to_string(), format!("{line1}\n"))?);
                 }
                 _ => bail!("Cannot parse log output"),
