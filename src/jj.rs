@@ -196,143 +196,14 @@ impl Jj {
         let mut log_list_tree_positions = Vec::new();
 
         for (commit_idx, commit) in self.log.iter_mut().enumerate() {
-            Self::flatten_commit(
-                commit,
-                commit_idx,
+            commit.flatten(
+                TreePosition::new(commit_idx, None, None, None),
                 &mut log_list,
                 &mut log_list_tree_positions,
             )?;
         }
 
         Ok((log_list, log_list_tree_positions))
-    }
-
-    fn flatten_commit(
-        commit: &mut Commit,
-        commit_idx: usize,
-        log_list: &mut Vec<Text<'static>>,
-        log_list_tree_positions: &mut Vec<TreePosition>,
-    ) -> Result<()> {
-        commit.flat_log_idx = log_list.len();
-        log_list.push(commit.render()?);
-        log_list_tree_positions.push(TreePosition {
-            commit_idx,
-            file_diff_idx: None,
-            diff_hunk_idx: None,
-            diff_hunk_line_idx: None,
-        });
-
-        if !commit.unfolded {
-            return Ok(());
-        }
-
-        if let Some(file_diffs) = &mut commit.file_diffs {
-            for (file_diff_idx, file_diff) in file_diffs.iter_mut().enumerate() {
-                Self::flatten_file_diff(
-                    file_diff,
-                    commit_idx,
-                    file_diff_idx,
-                    log_list,
-                    log_list_tree_positions,
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn flatten_file_diff(
-        file_diff: &mut FileDiff,
-        commit_idx: usize,
-        file_diff_idx: usize,
-        log_list: &mut Vec<Text<'static>>,
-        log_list_tree_positions: &mut Vec<TreePosition>,
-    ) -> Result<()> {
-        file_diff.flat_log_idx = log_list.len();
-        log_list.push(file_diff.render()?);
-        log_list_tree_positions.push(TreePosition {
-            commit_idx,
-            file_diff_idx: Some(file_diff_idx),
-            diff_hunk_idx: None,
-            diff_hunk_line_idx: None,
-        });
-
-        if !file_diff.unfolded {
-            return Ok(());
-        }
-
-        if let Some(diff_hunks) = &mut file_diff.diff_hunks {
-            for (diff_hunk_idx, diff_hunk) in diff_hunks.iter_mut().enumerate() {
-                Self::flatten_diff_hunk(
-                    diff_hunk,
-                    commit_idx,
-                    file_diff_idx,
-                    diff_hunk_idx,
-                    log_list,
-                    log_list_tree_positions,
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn flatten_diff_hunk(
-        diff_hunk: &mut DiffHunk,
-        commit_idx: usize,
-        file_diff_idx: usize,
-        diff_hunk_idx: usize,
-        log_list: &mut Vec<Text<'static>>,
-        log_list_tree_positions: &mut Vec<TreePosition>,
-    ) -> Result<()> {
-        diff_hunk.flat_log_idx = log_list.len();
-        log_list.push(diff_hunk.render()?);
-        log_list_tree_positions.push(TreePosition {
-            commit_idx,
-            file_diff_idx: Some(file_diff_idx),
-            diff_hunk_idx: Some(diff_hunk_idx),
-            diff_hunk_line_idx: None,
-        });
-
-        if !diff_hunk.unfolded {
-            return Ok(());
-        }
-
-        for (diff_hunk_line_idx, diff_hunk_line) in diff_hunk.diff_hunk_lines.iter_mut().enumerate()
-        {
-            Self::flatten_diff_hunk_line(
-                diff_hunk_line,
-                commit_idx,
-                file_diff_idx,
-                diff_hunk_idx,
-                diff_hunk_line_idx,
-                log_list,
-                log_list_tree_positions,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn flatten_diff_hunk_line(
-        diff_hunk_line: &mut DiffHunkLine,
-        commit_idx: usize,
-        file_diff_idx: usize,
-        diff_hunk_idx: usize,
-        diff_hunk_line_idx: usize,
-        log_list: &mut Vec<Text<'static>>,
-        log_list_tree_positions: &mut Vec<TreePosition>,
-    ) -> Result<()> {
-        diff_hunk_line.flat_log_idx = log_list.len();
-        log_list.push(diff_hunk_line.render()?);
-        log_list_tree_positions.push(TreePosition {
-            commit_idx,
-            file_diff_idx: Some(file_diff_idx),
-            diff_hunk_idx: Some(diff_hunk_idx),
-            diff_hunk_line_idx: Some(diff_hunk_line_idx),
-        });
-
-        Ok(())
     }
 
     pub fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
@@ -387,7 +258,14 @@ impl Jj {
     }
 }
 
-pub trait LogTreeNode {
+trait LogTreeNode {
+    fn render(&self) -> Result<Text<'static>>;
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()>;
     fn flat_log_idx(&self) -> usize;
     fn toggle_fold(&mut self) -> Result<()>;
 }
@@ -398,6 +276,22 @@ pub struct TreePosition {
     pub file_diff_idx: Option<usize>,
     pub diff_hunk_idx: Option<usize>,
     pub diff_hunk_line_idx: Option<usize>,
+}
+
+impl TreePosition {
+    pub fn new(
+        commit_idx: usize,
+        file_diff_idx: Option<usize>,
+        diff_hunk_idx: Option<usize>,
+        diff_hunk_line_idx: Option<usize>,
+    ) -> Self {
+        Self {
+            commit_idx,
+            file_diff_idx,
+            diff_hunk_idx,
+            diff_hunk_line_idx,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -456,13 +350,40 @@ impl Commit {
             flat_log_idx: 0,
         })
     }
-
-    pub fn render(&self) -> Result<Text<'static>> {
-        Ok(self.pretty_string.into_text()?)
-    }
 }
 
 impl LogTreeNode for Commit {
+    fn render(&self) -> Result<Text<'static>> {
+        Ok(self.pretty_string.into_text()?)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        self.flat_log_idx = log_list.len();
+        log_list.push(self.render()?);
+        log_list_tree_positions.push(tree_pos.clone());
+
+        if !self.unfolded {
+            return Ok(());
+        }
+
+        if let Some(file_diffs) = &mut self.file_diffs {
+            for (file_diff_idx, file_diff) in file_diffs.iter_mut().enumerate() {
+                file_diff.flatten(
+                    TreePosition::new(tree_pos.commit_idx, Some(file_diff_idx), None, None),
+                    log_list,
+                    log_list_tree_positions,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
     }
@@ -551,13 +472,45 @@ impl FileDiff {
             flat_log_idx: 0,
         })
     }
-
-    pub fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0} {1}", self.graph_indent, self.pretty_string).into_text()?)
-    }
 }
 
 impl LogTreeNode for FileDiff {
+    fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0} {1}", self.graph_indent, self.pretty_string).into_text()?)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        self.flat_log_idx = log_list.len();
+        log_list.push(self.render()?);
+        log_list_tree_positions.push(tree_pos.clone());
+
+        if !self.unfolded {
+            return Ok(());
+        }
+
+        if let Some(diff_hunks) = &mut self.diff_hunks {
+            for (diff_hunk_idx, diff_hunk) in diff_hunks.iter_mut().enumerate() {
+                diff_hunk.flatten(
+                    TreePosition::new(
+                        tree_pos.commit_idx,
+                        tree_pos.file_diff_idx,
+                        Some(diff_hunk_idx),
+                        None,
+                    ),
+                    log_list,
+                    log_list_tree_positions,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
     }
@@ -643,13 +596,43 @@ impl DiffHunk {
             flat_log_idx: 0,
         }
     }
-
-    pub fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
-    }
 }
 
 impl LogTreeNode for DiffHunk {
+    fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        self.flat_log_idx = log_list.len();
+        log_list.push(self.render()?);
+        log_list_tree_positions.push(tree_pos.clone());
+
+        if !self.unfolded {
+            return Ok(());
+        }
+
+        for (diff_hunk_line_idx, diff_hunk_line) in self.diff_hunk_lines.iter_mut().enumerate() {
+            diff_hunk_line.flatten(
+                TreePosition::new(
+                    tree_pos.commit_idx,
+                    tree_pos.file_diff_idx,
+                    tree_pos.diff_hunk_idx,
+                    Some(diff_hunk_line_idx),
+                ),
+                log_list,
+                log_list_tree_positions,
+            )?;
+        }
+
+        Ok(())
+    }
+
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
     }
@@ -675,13 +658,26 @@ impl DiffHunkLine {
             flat_log_idx: 0,
         }
     }
-
-    pub fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0}   {1}", self.graph_indent, self.pretty_string).into_text()?)
-    }
 }
 
 impl LogTreeNode for DiffHunkLine {
+    fn render(&self) -> Result<Text<'static>> {
+        Ok(format!("{0}   {1}", self.graph_indent, self.pretty_string).into_text()?)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        self.flat_log_idx = log_list.len();
+        log_list.push(self.render()?);
+        log_list_tree_positions.push(tree_pos);
+
+        Ok(())
+    }
+
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
     }
