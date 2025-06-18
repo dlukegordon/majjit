@@ -2,7 +2,7 @@ use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
 use ratatui::text::Text;
 use regex::Regex;
-use std::process::Command;
+use std::{fmt, process::Command};
 
 #[derive(Debug)]
 pub struct Jj {
@@ -262,7 +262,11 @@ struct Commit {
     change_id: String,
     _commit_id: String,
     current_working_copy: bool,
-    pretty_string: String,
+    symbol: String,
+    line1_graph_chars: String,
+    line2_graph_chars: String,
+    pretty_line1: String,
+    pretty_line2: String,
     graph_indent: String,
     unfolded: bool,
     file_diffs: Option<Vec<FileDiff>>,
@@ -272,29 +276,38 @@ struct Commit {
 impl Commit {
     fn new(repository: String, pretty_string: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
-        let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8})\n([ │├─╯]*)")?;
+        let re_fields = Regex::new(r"^([ │]*)(.)\s+([k-z]{8})\s+.*\s+([a-f0-9]{8})\n([ │├─╯]*)")?;
+        let re_lines = Regex::new(r"^[ │]*\S+\s+(.*)\n[ │├─╯]*(.*)")?;
 
-        let captures = re
+        let captures = re_fields
             .captures(&clean_string)
-            .ok_or_else(|| anyhow!("Cannot parse commit string"))?;
-
-        let change_id = captures
+            .ok_or_else(|| anyhow!("Cannot parse commit fields: {:?}", pretty_string))?;
+        let line1_graph_chars: String = captures
             .get(1)
+            .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
+            .as_str()
+            .into();
+        let symbol = captures
+            .get(2)
+            .ok_or_else(|| anyhow!("Cannot parse commit symbol"))?
+            .as_str()
+            .into();
+        let change_id = captures
+            .get(3)
             .ok_or_else(|| anyhow!("Cannot parse commit change id"))?
             .as_str()
             .into();
         let commit_id = captures
-            .get(2)
+            .get(4)
             .ok_or_else(|| anyhow!("Cannot parse commit id"))?
             .as_str()
             .into();
-
-        let graph_chars: String = captures
-            .get(3)
-            .ok_or_else(|| anyhow!("Cannot parse indent prefix"))?
+        let line2_graph_chars: String = captures
+            .get(5)
+            .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
             .as_str()
             .into();
-        let graph_indent: String = graph_chars
+        let graph_indent: String = line2_graph_chars
             .chars()
             .map(|c| match c {
                 '│' | ' ' => c,
@@ -303,14 +316,32 @@ impl Commit {
             })
             .collect();
 
-        let current_working_copy = clean_string.starts_with('@');
+        let current_working_copy = symbol == "@";
+
+        let captures = re_lines
+            .captures(&pretty_string)
+            .ok_or_else(|| anyhow!("Cannot parse commit lines: {:?}", pretty_string))?;
+        let pretty_line1 = captures
+            .get(1)
+            .ok_or_else(|| anyhow!("Cannot parse commit line1"))?
+            .as_str()
+            .into();
+        let pretty_line2 = captures
+            .get(2)
+            .ok_or_else(|| anyhow!("Cannot parse commit line2"))?
+            .as_str()
+            .into();
 
         let mut commit = Commit {
             repository,
             change_id,
             _commit_id: commit_id,
             current_working_copy,
-            pretty_string,
+            symbol,
+            line1_graph_chars,
+            line2_graph_chars,
+            pretty_line1,
+            pretty_line2,
             graph_indent,
             unfolded: false,
             file_diffs: None,
@@ -328,7 +359,20 @@ impl Commit {
 
 impl LogTreeNode for Commit {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(self.pretty_string.into_text()?)
+        let line1 = format!(
+            "{}{}  {} {}",
+            self.line1_graph_chars,
+            self.symbol,
+            fold_symbol(self.unfolded),
+            self.pretty_line1
+        );
+        let line2 = if self.pretty_line2 == "" {
+            "".to_string()
+        } else {
+            format!("\n{}  {}", self.line2_graph_chars, self.pretty_line2)
+        };
+
+        Ok(format!("{}{}", line1, line2).into_text()?)
     }
 
     fn flatten(
@@ -424,8 +468,8 @@ struct FileDiff {
     repository: String,
     change_id: String,
     path: String,
-    _status: FileDiffStatus,
-    pretty_string: String,
+    description: String,
+    status: FileDiffStatus,
     graph_indent: String,
     unfolded: bool,
     diff_hunks: Option<Vec<DiffHunk>>,
@@ -450,7 +494,7 @@ impl FileDiff {
             .ok_or_else(|| anyhow!("Cannot parse file diff status"))?
             .as_str()
             .parse::<FileDiffStatus>()?;
-        let path: String = captures
+        let description: String = captures
             .get(2)
             .ok_or_else(|| anyhow!("Cannot parse file diff path"))?
             .as_str()
@@ -460,8 +504,8 @@ impl FileDiff {
             FileDiffStatus::Renamed => {
                 let rename_regex = Regex::new(r"^(.+)\{(.+?)\s*=>\s*(.+?)\}$").unwrap();
                 let captures = rename_regex
-                    .captures(&path)
-                    .ok_or_else(|| anyhow!("Cannot parse file diff rename paths: {path}"))?;
+                    .captures(&description)
+                    .ok_or_else(|| anyhow!("Cannot parse file diff rename paths: {description}"))?;
                 let path_start = captures
                     .get(1)
                     .ok_or_else(|| anyhow!("Cannot parse file diff rename path start"))?
@@ -473,15 +517,15 @@ impl FileDiff {
 
                 format!("{path_start}{path_new_end}")
             }
-            _ => path,
+            _ => description.clone(),
         };
 
         Ok(Self {
             repository,
             change_id,
             path,
-            _status: status,
-            pretty_string,
+            description,
+            status,
             graph_indent,
             unfolded: false,
             diff_hunks: None,
@@ -509,7 +553,14 @@ impl FileDiff {
 
 impl LogTreeNode for FileDiff {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0} {1}", self.graph_indent, self.pretty_string).into_text()?)
+        Ok(format!(
+            "{}{} {}  {}",
+            self.graph_indent,
+            fold_symbol(self.unfolded),
+            self.status,
+            self.description,
+        )
+        .into_text()?)
     }
 
     fn flatten(
@@ -587,6 +638,18 @@ impl std::str::FromStr for FileDiffStatus {
             "R" => Ok(FileDiffStatus::Renamed),
             _ => Err(anyhow!("Unknown file diff status: {}", s)),
         }
+    }
+}
+
+impl fmt::Display for FileDiffStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let word = match self {
+            FileDiffStatus::Modified => "modified",
+            FileDiffStatus::Added => "new file",
+            FileDiffStatus::Deleted => "deleted ",
+            FileDiffStatus::Renamed => "renamed ",
+        };
+        write!(f, "{}", word)
     }
 }
 
@@ -706,7 +769,13 @@ impl DiffHunk {
 
 impl LogTreeNode for DiffHunk {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
+        Ok(format!(
+            "{}{} {}",
+            self.graph_indent,
+            fold_symbol(self.unfolded),
+            self.pretty_string
+        )
+        .into_text()?)
     }
 
     fn flatten(
@@ -768,7 +837,7 @@ impl DiffHunkLine {
 
 impl LogTreeNode for DiffHunkLine {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0}   {1}", self.graph_indent, self.pretty_string).into_text()?)
+        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
     }
 
     fn flatten(
@@ -796,4 +865,8 @@ impl LogTreeNode for DiffHunkLine {
 fn strip_ansi(pretty_str: &str) -> String {
     let ansi_regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
     ansi_regex.replace_all(&pretty_str, "").to_string()
+}
+
+fn fold_symbol(unfolded: bool) -> char {
+    if unfolded { '▾' } else { '▸' }
 }
