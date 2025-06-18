@@ -1,5 +1,5 @@
 use ansi_to_tui::IntoText;
-use anyhow::{Error, Result, anyhow, bail, ensure};
+use anyhow::{Error, Result, anyhow, bail};
 use ratatui::text::Text;
 use regex::Regex;
 use std::process::Command;
@@ -8,13 +8,13 @@ use std::process::Command;
 pub struct Jj {
     _repository: String,
     revset: String,
-    log: Vec<Commit>,
+    log: Vec<CommitOrText>,
 }
 
 impl Jj {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         Self::ensure_valid_repo(&repository)?;
-        let log = Commit::load_all(&repository, &revset)?;
+        let log = CommitOrText::load_all(&repository, &revset)?;
         let jj = Jj {
             _repository: repository,
             revset,
@@ -96,9 +96,9 @@ impl Jj {
         let mut log_list = Vec::new();
         let mut log_list_tree_positions = Vec::new();
 
-        for (commit_idx, commit) in self.log.iter_mut().enumerate() {
-            commit.flatten(
-                TreePosition::new(commit_idx, None, None, None),
+        for (commit_or_text_idx, commit_or_text) in self.log.iter_mut().enumerate() {
+            commit_or_text.flatten(
+                TreePosition::new(commit_or_text_idx, None, None, None),
                 &mut log_list,
                 &mut log_list_tree_positions,
             )?;
@@ -109,7 +109,14 @@ impl Jj {
 
     fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
         // Traverse to commit
-        let commit = &mut self.log[tree_pos.commit_idx];
+        let commit_or_text = &mut self.log[tree_pos.commit_or_text_idx];
+        let commit = match commit_or_text {
+            CommitOrText::InfoText(info_text) => {
+                return Ok(info_text);
+            }
+            CommitOrText::Commit(commit) => commit,
+        };
+
         let file_diff_idx = match tree_pos.file_diff_idx {
             None => {
                 return Ok(commit);
@@ -173,7 +180,7 @@ trait LogTreeNode {
 
 #[derive(Debug, Clone)]
 pub struct TreePosition {
-    pub commit_idx: usize,
+    pub commit_or_text_idx: usize,
     pub file_diff_idx: Option<usize>,
     pub diff_hunk_idx: Option<usize>,
     pub diff_hunk_line_idx: Option<usize>,
@@ -181,16 +188,70 @@ pub struct TreePosition {
 
 impl TreePosition {
     pub fn new(
-        commit_idx: usize,
+        commit_or_text_idx: usize,
         file_diff_idx: Option<usize>,
         diff_hunk_idx: Option<usize>,
         diff_hunk_line_idx: Option<usize>,
     ) -> Self {
         Self {
-            commit_idx,
+            commit_or_text_idx,
             file_diff_idx,
             diff_hunk_idx,
             diff_hunk_line_idx,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum CommitOrText {
+    Commit(Commit),
+    InfoText(InfoText),
+}
+
+impl CommitOrText {
+    fn load_all(repository: &str, revset: &str) -> Result<Vec<Self>> {
+        let output = Jj::run_jj_log(repository, revset)?;
+        let mut lines = output.trim().lines();
+        let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8})$")?;
+
+        let mut commits_or_texts = Vec::new();
+        loop {
+            let line1 = match lines.next() {
+                None => break,
+                Some(line) => line,
+            };
+
+            if let None = re.captures(&strip_ansi(&line1)) {
+                commits_or_texts.push(Self::InfoText(InfoText::new(line1.to_string())));
+                break;
+            };
+
+            let line2 = match lines.next() {
+                None => "",
+                Some(line2) => line2,
+            };
+            commits_or_texts.push(Self::Commit(Commit::new(
+                repository.to_string(),
+                format!("{line1}\n{line2}"),
+            )?));
+        }
+
+        Ok(commits_or_texts)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        match self {
+            CommitOrText::Commit(commit) => {
+                commit.flatten(tree_pos, log_list, log_list_tree_positions)
+            }
+            CommitOrText::InfoText(info_text) => {
+                info_text.flatten(tree_pos, log_list, log_list_tree_positions)
+            }
         }
     }
 }
@@ -216,6 +277,7 @@ impl Commit {
         let captures = re
             .captures(&clean_string)
             .ok_or_else(|| anyhow!("Cannot parse commit string"))?;
+
         let change_id = captures
             .get(1)
             .ok_or_else(|| anyhow!("Cannot parse commit change id"))?
@@ -243,7 +305,7 @@ impl Commit {
 
         let current_working_copy = clean_string.starts_with('@');
 
-        let mut commit = Self {
+        let mut commit = Commit {
             repository,
             change_id,
             _commit_id: commit_id,
@@ -261,30 +323,6 @@ impl Commit {
         }
 
         Ok(commit)
-    }
-
-    fn load_all(repository: &str, revset: &str) -> Result<Vec<Self>> {
-        let output = Jj::run_jj_log(repository, revset)?;
-        let lines: Vec<&str> = output.trim().lines().collect();
-
-        let mut commits = Vec::new();
-        for chunk in lines.chunks(2) {
-            match chunk {
-                [line1, line2] => {
-                    commits.push(Self::new(
-                        repository.to_string(),
-                        format!("{line1}\n{line2}"),
-                    )?);
-                }
-                [line1] => {
-                    // ensure!(line1.contains("root()"), "Last line is not the root commit");
-                    commits.push(Self::new(repository.to_string(), format!("{line1}\n"))?);
-                }
-                _ => bail!("Cannot parse log output"),
-            }
-        }
-
-        Ok(commits)
     }
 }
 
@@ -310,7 +348,7 @@ impl LogTreeNode for Commit {
         if let Some(file_diffs) = &mut self.file_diffs {
             for (file_diff_idx, file_diff) in file_diffs.iter_mut().enumerate() {
                 file_diff.flatten(
-                    TreePosition::new(tree_pos.commit_idx, Some(file_diff_idx), None, None),
+                    TreePosition::new(tree_pos.commit_or_text_idx, Some(file_diff_idx), None, None),
                     log_list,
                     log_list_tree_positions,
                 )?;
@@ -336,6 +374,47 @@ impl LogTreeNode for Commit {
             self.file_diffs = Some(file_diffs);
         }
 
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct InfoText {
+    pretty_string: String,
+    flat_log_idx: usize,
+}
+
+impl InfoText {
+    fn new(pretty_string: String) -> Self {
+        Self {
+            pretty_string,
+            flat_log_idx: 0,
+        }
+    }
+}
+
+impl LogTreeNode for InfoText {
+    fn render(&self) -> Result<Text<'static>> {
+        Ok(self.pretty_string.into_text()?)
+    }
+
+    fn flatten(
+        &mut self,
+        tree_pos: TreePosition,
+        log_list: &mut Vec<Text<'static>>,
+        log_list_tree_positions: &mut Vec<TreePosition>,
+    ) -> Result<()> {
+        self.flat_log_idx = log_list.len();
+        log_list.push(self.render()?);
+        log_list_tree_positions.push(tree_pos.clone());
+        Ok(())
+    }
+
+    fn flat_log_idx(&self) -> usize {
+        self.flat_log_idx
+    }
+
+    fn toggle_fold(&mut self) -> Result<()> {
         Ok(())
     }
 }
@@ -451,7 +530,7 @@ impl LogTreeNode for FileDiff {
             for (diff_hunk_idx, diff_hunk) in diff_hunks.iter_mut().enumerate() {
                 diff_hunk.flatten(
                     TreePosition::new(
-                        tree_pos.commit_idx,
+                        tree_pos.commit_or_text_idx,
                         tree_pos.file_diff_idx,
                         Some(diff_hunk_idx),
                         None,
@@ -647,7 +726,7 @@ impl LogTreeNode for DiffHunk {
         for (diff_hunk_line_idx, diff_hunk_line) in self.diff_hunk_lines.iter_mut().enumerate() {
             diff_hunk_line.flatten(
                 TreePosition::new(
-                    tree_pos.commit_idx,
+                    tree_pos.commit_or_text_idx,
                     tree_pos.file_diff_idx,
                     tree_pos.diff_hunk_idx,
                     Some(diff_hunk_line_idx),
