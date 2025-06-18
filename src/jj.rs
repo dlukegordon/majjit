@@ -299,6 +299,7 @@ struct Commit {
     repository: String,
     change_id: String,
     commit_id: String,
+    current_working_copy: bool,
     pretty_string: String,
     graph_indent: String,
     unfolded: bool,
@@ -339,16 +340,26 @@ impl Commit {
             })
             .collect();
 
-        Ok(Self {
+        let current_working_copy = clean_string.starts_with('@');
+
+        let mut commit = Self {
             repository,
             change_id,
             commit_id,
+            current_working_copy,
             pretty_string,
             graph_indent,
             unfolded: false,
             file_diffs: None,
             flat_log_idx: 0,
-        })
+        };
+
+        // Start unfolded for @ commit
+        if current_working_copy {
+            commit.toggle_fold()?;
+        }
+
+        Ok(commit)
     }
 }
 
