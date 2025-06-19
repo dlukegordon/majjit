@@ -54,6 +54,28 @@ impl Jj {
             .arg("colors.'diff removed token'={underline=false}")
             .arg("--config")
             .arg("colors.'diff token'={underline=false}")
+            .arg("--config")
+            .arg(
+                r#"templates.log_node=
+                    coalesce(
+                      if(!self, label("elided", "~")),
+                      label(
+                        separate(" ",
+                          if(current_working_copy, "working_copy"),
+                          if(immutable, "immutable"),
+                          if(conflict, "conflict"),
+                        ),
+                        coalesce(
+                          if(current_working_copy, "@"),
+                          if(root, "┴"),
+                          if(immutable, "●"),
+                          if(conflict, "×"),
+                          "○",
+                        )
+                      )
+                    )
+                "#,
+            )
             .arg("--repository")
             .arg(repository)
             .args(args);
@@ -223,7 +245,7 @@ impl CommitOrText {
 
             if let None = re.captures(&strip_ansi(&line1)) {
                 commits_or_texts.push(Self::InfoText(InfoText::new(line1.to_string())));
-                break;
+                continue;
             };
 
             let line2 = match lines.next() {
@@ -307,7 +329,7 @@ impl Commit {
             .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
             .as_str()
             .into();
-        let graph_indent: String = line2_graph_chars
+        let mut graph_indent: String = line2_graph_chars
             .chars()
             .map(|c| match c {
                 '│' | ' ' => c,
@@ -315,6 +337,7 @@ impl Commit {
                 _ => ' ',
             })
             .collect();
+        graph_indent.pop(); // Even out with our spacing
 
         let current_working_copy = symbol == "@";
 
@@ -360,7 +383,7 @@ impl Commit {
 impl LogTreeNode for Commit {
     fn render(&self) -> Result<Text<'static>> {
         let line1 = format!(
-            "{}{}  {} {}",
+            "{}{} {} {}",
             self.line1_graph_chars,
             self.symbol,
             fold_symbol(self.unfolded),
@@ -369,7 +392,7 @@ impl LogTreeNode for Commit {
         let line2 = if self.pretty_line2 == "" {
             "".to_string()
         } else {
-            format!("\n{}  {}", self.line2_graph_chars, self.pretty_line2)
+            format!("\n{} {}", self.line2_graph_chars, self.pretty_line2)
         };
 
         Ok(format!("{}{}", line1, line2).into_text()?)
@@ -554,7 +577,7 @@ impl FileDiff {
 impl LogTreeNode for FileDiff {
     fn render(&self) -> Result<Text<'static>> {
         Ok(format!(
-            "{}{} {}  {}",
+            "{}{} \x1b[35m{}  {}\x1b[0m",
             self.graph_indent,
             fold_symbol(self.unfolded),
             self.status,
@@ -655,7 +678,7 @@ impl fmt::Display for FileDiffStatus {
 
 #[derive(Debug)]
 struct DiffHunk {
-    pretty_string: String,
+    clean_string: String,
     graph_indent: String,
     unfolded: bool,
     _old_start: u32,
@@ -676,12 +699,13 @@ impl DiffHunk {
         new_start: u32,
         new_count: u32,
     ) -> Self {
+        let clean_string = strip_ansi(&pretty_string);
         let diff_hunk_lines = lines
             .into_iter()
             .map(|line| DiffHunkLine::new(line, graph_indent.clone()))
             .collect();
         Self {
-            pretty_string,
+            clean_string,
             graph_indent,
             unfolded: true,
             _old_start: old_start,
@@ -770,10 +794,10 @@ impl DiffHunk {
 impl LogTreeNode for DiffHunk {
     fn render(&self) -> Result<Text<'static>> {
         Ok(format!(
-            "{}{} {}",
+            "{}{} \x1b[45m\x1b[30m{}\x1b[0m",
             self.graph_indent,
             fold_symbol(self.unfolded),
-            self.pretty_string
+            self.clean_string
         )
         .into_text()?)
     }
@@ -867,6 +891,7 @@ fn strip_ansi(pretty_str: &str) -> String {
     ansi_regex.replace_all(&pretty_str, "").to_string()
 }
 
-fn fold_symbol(unfolded: bool) -> char {
-    if unfolded { '▾' } else { '▸' }
+fn fold_symbol(unfolded: bool) -> String {
+    let symbol = if unfolded { "▾" } else { "▸" };
+    format!("\x1b[90m{symbol}\x1b[0m")
 }
