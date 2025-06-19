@@ -12,6 +12,7 @@ enum Message {
     SelectNextLogItem,
     SelectPrevLogItem,
     ToggleLogListFold,
+    Refresh,
 }
 
 pub fn update(model: &mut Model) -> Result<()> {
@@ -46,6 +47,9 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextLogItem),
         KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevLogItem),
         KeyCode::Tab => Some(Message::ToggleLogListFold),
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(Message::Refresh)
+        }
         _ => None,
     }
 }
@@ -86,6 +90,9 @@ fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
         }
         Message::ToggleLogListFold => {
             model.toggle_fold(list_idx)?;
+        }
+        Message::Refresh => {
+            model.refresh()?;
         }
     };
 

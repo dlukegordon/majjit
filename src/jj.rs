@@ -6,21 +6,103 @@ use std::{fmt, process::Command};
 
 #[derive(Debug)]
 pub struct Jj {
-    _repository: String,
+    repository: String,
     revset: String,
-    log: Vec<CommitOrText>,
+    log_tree: Vec<CommitOrText>,
 }
 
 impl Jj {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         Self::ensure_valid_repo(&repository)?;
-        let log = CommitOrText::load_all(&repository, &revset)?;
-        let jj = Jj {
-            _repository: repository,
+        let mut jj = Jj {
+            repository,
             revset,
-            log,
+            log_tree: Vec::new(),
         };
+        jj.load_log_tree()?;
         Ok(jj)
+    }
+
+    pub fn load_log_tree(&mut self) -> Result<()> {
+        self.log_tree = CommitOrText::load_all(&self.repository, &self.revset)?;
+        Ok(())
+    }
+
+    pub fn revset(&self) -> &str {
+        &self.revset
+    }
+
+    pub fn flatten_log(&mut self) -> Result<(Vec<Text<'static>>, Vec<TreePosition>)> {
+        let mut log_list = Vec::new();
+        let mut log_list_tree_positions = Vec::new();
+
+        for (commit_or_text_idx, commit_or_text) in self.log_tree.iter_mut().enumerate() {
+            commit_or_text.flatten(
+                TreePosition::new(commit_or_text_idx, None, None, None),
+                &mut log_list,
+                &mut log_list_tree_positions,
+            )?;
+        }
+
+        Ok((log_list, log_list_tree_positions))
+    }
+
+    fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
+        // Traverse to commit
+        let commit_or_text = &mut self.log_tree[tree_pos.commit_or_text_idx];
+        let commit = match commit_or_text {
+            CommitOrText::InfoText(info_text) => {
+                return Ok(info_text);
+            }
+            CommitOrText::Commit(commit) => commit,
+        };
+
+        let file_diff_idx = match tree_pos.file_diff_idx {
+            None => {
+                return Ok(commit);
+            }
+            Some(file_diff_idx) => file_diff_idx,
+        };
+
+        // Traverse to file diff
+        let file_diff = match &mut commit.file_diffs {
+            None => {
+                bail!("Trying to get unloaded file diffs for commit");
+            }
+            Some(file_diffs) => &mut file_diffs[file_diff_idx],
+        };
+        let diff_hunk_idx = match tree_pos.diff_hunk_idx {
+            None => {
+                return Ok(file_diff);
+            }
+            Some(diff_hunk_idx) => diff_hunk_idx,
+        };
+
+        // Traverse to diff hunk
+        let diff_hunk = match &mut file_diff.diff_hunks {
+            None => {
+                bail!("Trying to get unloaded diff hunks for file diff");
+            }
+            Some(diff_hunks) => &mut diff_hunks[diff_hunk_idx],
+        };
+        let diff_hunk_line_idx = match tree_pos.diff_hunk_line_idx {
+            None => {
+                return Ok(diff_hunk);
+            }
+            Some(diff_hunk_line_idx) => diff_hunk_line_idx,
+        };
+
+        // Traverse to diff hunk line
+        let diff_hunk_line = &mut diff_hunk.diff_hunk_lines[diff_hunk_line_idx];
+        Ok(diff_hunk_line)
+    }
+
+    pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
+        let mut tree_pos = tree_pos.clone();
+        tree_pos.diff_hunk_line_idx = None;
+        let node = self.get_tree_node(&tree_pos)?;
+        node.toggle_fold()?;
+        Ok(node.flat_log_idx())
     }
 
     pub fn ensure_valid_repo(repository: &str) -> Result<()> {
@@ -108,83 +190,6 @@ impl Jj {
     pub fn run_jj_diff_file(repository: &str, change_id: &str, file: &str) -> Result<String> {
         let args = ["diff", "--revisions", change_id, "--git", file];
         Self::run_jj_command(repository, &args)
-    }
-
-    pub fn revset(&self) -> &str {
-        &self.revset
-    }
-
-    pub fn flatten_log(&mut self) -> Result<(Vec<Text<'static>>, Vec<TreePosition>)> {
-        let mut log_list = Vec::new();
-        let mut log_list_tree_positions = Vec::new();
-
-        for (commit_or_text_idx, commit_or_text) in self.log.iter_mut().enumerate() {
-            commit_or_text.flatten(
-                TreePosition::new(commit_or_text_idx, None, None, None),
-                &mut log_list,
-                &mut log_list_tree_positions,
-            )?;
-        }
-
-        Ok((log_list, log_list_tree_positions))
-    }
-
-    fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
-        // Traverse to commit
-        let commit_or_text = &mut self.log[tree_pos.commit_or_text_idx];
-        let commit = match commit_or_text {
-            CommitOrText::InfoText(info_text) => {
-                return Ok(info_text);
-            }
-            CommitOrText::Commit(commit) => commit,
-        };
-
-        let file_diff_idx = match tree_pos.file_diff_idx {
-            None => {
-                return Ok(commit);
-            }
-            Some(file_diff_idx) => file_diff_idx,
-        };
-
-        // Traverse to file diff
-        let file_diff = match &mut commit.file_diffs {
-            None => {
-                bail!("Trying to get unloaded file diffs for commit");
-            }
-            Some(file_diffs) => &mut file_diffs[file_diff_idx],
-        };
-        let diff_hunk_idx = match tree_pos.diff_hunk_idx {
-            None => {
-                return Ok(file_diff);
-            }
-            Some(diff_hunk_idx) => diff_hunk_idx,
-        };
-
-        // Traverse to diff hunk
-        let diff_hunk = match &mut file_diff.diff_hunks {
-            None => {
-                bail!("Trying to get unloaded diff hunks for file diff");
-            }
-            Some(diff_hunks) => &mut diff_hunks[diff_hunk_idx],
-        };
-        let diff_hunk_line_idx = match tree_pos.diff_hunk_line_idx {
-            None => {
-                return Ok(diff_hunk);
-            }
-            Some(diff_hunk_line_idx) => diff_hunk_line_idx,
-        };
-
-        // Traverse to diff hunk line
-        let diff_hunk_line = &mut diff_hunk.diff_hunk_lines[diff_hunk_line_idx];
-        Ok(diff_hunk_line)
-    }
-
-    pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
-        let mut tree_pos = tree_pos.clone();
-        tree_pos.diff_hunk_line_idx = None;
-        let node = self.get_tree_node(&tree_pos)?;
-        node.toggle_fold()?;
-        Ok(node.flat_log_idx())
     }
 }
 

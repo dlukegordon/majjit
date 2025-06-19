@@ -3,8 +3,9 @@ use crate::jj::{Jj, TreePosition};
 use anyhow::{Result, anyhow};
 use ratatui::{text::Text, widgets::ListState};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub enum State {
+    #[default]
     Running,
     Quit,
 }
@@ -24,16 +25,21 @@ impl Model {
         log_list_state.select(Some(0));
 
         let mut model = Self {
-            state: State::Running,
+            state: State::default(),
             jj,
             log_list: Vec::new(),
             log_list_state,
             log_list_tree_positions: Vec::new(),
         };
-
         model.update_log_list()?;
 
         Ok(model)
+    }
+
+    pub fn refresh(&mut self) -> Result<()> {
+        self.jj.load_log_tree()?;
+        self.update_log_list()?;
+        Ok(())
     }
 
     fn update_log_list(&mut self) -> Result<()> {
