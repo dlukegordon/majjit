@@ -1,5 +1,8 @@
 use anyhow::{Result, bail};
+use ratatui::{Terminal, backend::Backend};
 use std::process::Command;
+
+use crate::terminal;
 
 pub fn ensure_valid_repo(repository: &str) -> Result<()> {
     let output = Command::new("jj")
@@ -20,10 +23,10 @@ pub fn ensure_valid_repo(repository: &str) -> Result<()> {
     }
 }
 
-fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
+fn get_jj_command(repository: &str) -> Command {
     let mut command = Command::new("jj");
     command
-        .env("JJ_CONFIG", "/dev/null")
+        // .env("JJ_CONFIG", "/dev/null")
         .arg("--color")
         .arg("always")
         .arg("--config")
@@ -55,8 +58,14 @@ fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
                 "#,
         )
         .arg("--repository")
-        .arg(repository)
-        .args(args);
+        .arg(repository);
+
+    command
+}
+
+fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
+    let mut command = get_jj_command(repository);
+    command.args(args);
     let output = command.output()?;
 
     if output.status.success() {
@@ -73,6 +82,25 @@ fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
     }
 }
 
+fn run_jj_command_interactive(
+    repository: &str,
+    args: &[&str],
+    term: &mut Terminal<impl Backend>,
+) -> Result<()> {
+    let mut command = get_jj_command(repository);
+    command.args(args);
+
+    terminal::relinquish_terminal()?;
+    let status = command.status()?;
+    terminal::takeover_terminal(term)?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("Jj command '{:?}' failed with status {}", command, status,);
+    }
+}
+
 pub fn log(repository: &str, revset: &str) -> Result<String> {
     let args = ["log", "--revisions", revset];
     run_jj_command(repository, &args)
@@ -86,4 +114,14 @@ pub fn diff_summary(repository: &str, change_id: &str) -> Result<String> {
 pub fn diff_file(repository: &str, change_id: &str, file: &str) -> Result<String> {
     let args = ["diff", "--revisions", change_id, "--git", file];
     run_jj_command(repository, &args)
+}
+
+pub fn describe(
+    repository: &str,
+    change_id: &str,
+    terminal: &mut Terminal<impl Backend>,
+) -> Result<()> {
+    let args = ["describe", change_id, "--ignore-immutable"];
+    run_jj_command_interactive(repository, &args, terminal)?;
+    Ok(())
 }

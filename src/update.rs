@@ -2,6 +2,7 @@ use crate::model::{Model, State};
 
 use anyhow::{Result, bail};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
+use ratatui::{Terminal, backend::Backend};
 use std::time::Duration;
 
 const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
@@ -13,12 +14,13 @@ enum Message {
     SelectPrevLogItem,
     ToggleLogListFold,
     Refresh,
+    Describe,
 }
 
-pub fn update(model: &mut Model) -> Result<()> {
+pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Result<()> {
     let mut current_msg = handle_event(model)?;
     while let Some(msg) = current_msg {
-        current_msg = handle_msg(model, msg)?;
+        current_msg = handle_msg(terminal, model, msg)?;
     }
     Ok(())
 }
@@ -50,6 +52,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(Message::Refresh)
         }
+        KeyCode::Char('d') => Some(Message::Describe),
         _ => None,
     }
 }
@@ -62,7 +65,11 @@ fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
     }
 }
 
-fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
+fn handle_msg(
+    term: &mut Terminal<impl Backend>,
+    model: &mut Model,
+    msg: Message,
+) -> Result<Option<Message>> {
     let list_idx = match model.log_list_state.selected() {
         None => bail!("No log list item is selected"),
         Some(list_idx) => list_idx,
@@ -93,6 +100,9 @@ fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
         }
         Message::Refresh => {
             model.sync()?;
+        }
+        Message::Describe => {
+            model.describe(list_idx, term)?;
         }
     };
 

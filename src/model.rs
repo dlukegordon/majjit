@@ -1,7 +1,10 @@
-use crate::jj_log::{JjLog, TreePosition};
+use crate::{
+    jj_commands,
+    jj_log::{JjLog, TreePosition},
+};
 
 use anyhow::{Result, anyhow};
-use ratatui::{text::Text, widgets::ListState};
+use ratatui::{Terminal, backend::Backend, text::Text, widgets::ListState};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum State {
@@ -43,7 +46,7 @@ impl Model {
 
     pub fn sync(&mut self) -> Result<()> {
         self.jj_log.load_log_tree(&self.repository, &self.revset)?;
-        (self.log_list, self.log_list_tree_positions) = self.jj_log.flatten_log()?;
+        self.sync_log_list()?;
         Ok(())
     }
 
@@ -64,6 +67,20 @@ impl Model {
         let log_list_selected_idx = self.jj_log.toggle_fold(&tree_pos)?;
         self.log_list_state.select(Some(log_list_selected_idx));
         self.sync_log_list()?;
+        Ok(())
+    }
+
+    pub fn describe(&mut self, list_idx: usize, term: &mut Terminal<impl Backend>) -> Result<()> {
+        let tree_pos = self.get_tree_position(list_idx)?;
+        let commit = match self.jj_log.get_tree_commit(&tree_pos) {
+            // If the cursor isn't over a commit or its child nodes, nothing to do
+            None => return Ok(()),
+            Some(commit) => commit,
+        };
+
+        jj_commands::describe(&self.repository, &commit.change_id, term)?;
+
+        self.sync()?;
         Ok(())
     }
 }

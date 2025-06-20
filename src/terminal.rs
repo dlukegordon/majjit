@@ -10,11 +10,18 @@ use ratatui::{
 };
 use std::{io::stdout, panic};
 
-pub fn takeover_terminal() -> Result<Terminal<impl Backend>> {
+pub fn init_terminal() -> Result<Terminal<impl Backend>> {
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     Ok(terminal)
+}
+
+pub fn takeover_terminal(terminal: &mut Terminal<impl Backend>) -> Result<()> {
+    enable_raw_mode()?;
+    execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    terminal.clear()?;
+    Ok(())
 }
 
 pub fn relinquish_terminal() -> Result<()> {

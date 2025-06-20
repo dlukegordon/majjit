@@ -90,6 +90,14 @@ impl JjLog {
         Ok(diff_hunk_line)
     }
 
+    pub fn get_tree_commit(&self, tree_pos: &TreePosition) -> Option<&Commit> {
+        let commit_or_text = &self.log_tree[tree_pos.commit_or_text_idx];
+        match commit_or_text {
+            CommitOrText::InfoText(_) => None,
+            CommitOrText::Commit(commit) => Some(commit),
+        }
+    }
+
     pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
         let mut tree_pos = tree_pos.clone();
         tree_pos.diff_hunk_line_idx = None;
@@ -190,9 +198,9 @@ impl CommitOrText {
 }
 
 #[derive(Debug)]
-struct Commit {
+pub struct Commit {
     repository: String,
-    change_id: String,
+    pub change_id: String,
     _commit_id: String,
     current_working_copy: bool,
     symbol: String,
