@@ -1,35 +1,28 @@
+use crate::jj_commands;
 use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
 use ratatui::text::Text;
 use regex::Regex;
-use std::{fmt, process::Command};
+use std::fmt;
 
 #[derive(Debug)]
-pub struct Jj {
-    repository: String,
-    revset: String,
+pub struct JjLog {
     log_tree: Vec<CommitOrText>,
 }
 
-impl Jj {
-    pub fn new(repository: String, revset: String) -> Result<Self> {
-        Self::ensure_valid_repo(&repository)?;
-        let mut jj = Jj {
-            repository,
-            revset,
+impl JjLog {
+    pub fn new(repository: &str, revset: &str) -> Result<Self> {
+        jj_commands::ensure_valid_repo(&repository)?;
+        let mut jj_log = JjLog {
             log_tree: Vec::new(),
         };
-        jj.load_log_tree()?;
-        Ok(jj)
+        jj_log.load_log_tree(repository, revset)?;
+        Ok(jj_log)
     }
 
-    pub fn load_log_tree(&mut self) -> Result<()> {
-        self.log_tree = CommitOrText::load_all(&self.repository, &self.revset)?;
+    pub fn load_log_tree(&mut self, repository: &str, revset: &str) -> Result<()> {
+        self.log_tree = CommitOrText::load_all(repository, revset)?;
         Ok(())
-    }
-
-    pub fn revset(&self) -> &str {
-        &self.revset
     }
 
     pub fn flatten_log(&mut self) -> Result<(Vec<Text<'static>>, Vec<TreePosition>)> {
@@ -104,93 +97,6 @@ impl Jj {
         node.toggle_fold()?;
         Ok(node.flat_log_idx())
     }
-
-    pub fn ensure_valid_repo(repository: &str) -> Result<()> {
-        let output = Command::new("jj")
-            .env("JJ_CONFIG", "/dev/null")
-            .arg("--repository")
-            .arg(repository)
-            .arg("workspace")
-            .arg("root")
-            .output()?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stderr = stderr.trim();
-            let err_msg = stderr.strip_prefix("Error: ").unwrap_or(&stderr);
-            bail!("{}", err_msg);
-        }
-    }
-
-    fn run_jj_command(repository: &str, args: &[&str]) -> Result<String> {
-        let mut command = Command::new("jj");
-        command
-            .env("JJ_CONFIG", "/dev/null")
-            .arg("--color")
-            .arg("always")
-            .arg("--config")
-            .arg("colors.'diff added token'={underline=false}")
-            .arg("--config")
-            .arg("colors.'diff removed token'={underline=false}")
-            .arg("--config")
-            .arg("colors.'diff token'={underline=false}")
-            .arg("--config")
-            .arg(
-                r#"templates.log_node=
-                    coalesce(
-                      if(!self, label("elided", "~")),
-                      label(
-                        separate(" ",
-                          if(current_working_copy, "working_copy"),
-                          if(immutable, "immutable"),
-                          if(conflict, "conflict"),
-                        ),
-                        coalesce(
-                          if(current_working_copy, "@"),
-                          if(root, "┴"),
-                          if(immutable, "●"),
-                          if(conflict, "×"),
-                          "○",
-                        )
-                      )
-                    )
-                "#,
-            )
-            .arg("--repository")
-            .arg(repository)
-            .args(args);
-        let output = command.output()?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8(output.stdout)?;
-            Ok(stdout)
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "Jj command '{:?}' failed with status {}: {}",
-                command,
-                output.status,
-                stderr
-            );
-        }
-    }
-
-    fn run_jj_log(repository: &str, revset: &str) -> Result<String> {
-        let args = ["log", "--revisions", revset];
-        Self::run_jj_command(repository, &args)
-    }
-
-    pub fn run_jj_diff_summary(repository: &str, change_id: &str) -> Result<String> {
-        let args = ["diff", "--revisions", change_id, "--summary"];
-        Self::run_jj_command(repository, &args)
-    }
-
-    pub fn run_jj_diff_file(repository: &str, change_id: &str, file: &str) -> Result<String> {
-        let args = ["diff", "--revisions", change_id, "--git", file];
-        Self::run_jj_command(repository, &args)
-    }
 }
 
 trait LogTreeNode {
@@ -237,7 +143,7 @@ enum CommitOrText {
 
 impl CommitOrText {
     fn load_all(repository: &str, revset: &str) -> Result<Vec<Self>> {
-        let output = Jj::run_jj_log(repository, revset)?;
+        let output = jj_commands::log(repository, revset)?;
         let mut lines = output.trim().lines();
         let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8})$")?;
 
@@ -562,7 +468,7 @@ impl FileDiff {
     }
 
     fn load_all(repository: &str, change_id: &str, graph_indent: &str) -> Result<Vec<Self>> {
-        let output = Jj::run_jj_diff_summary(repository, change_id)?;
+        let output = jj_commands::diff_summary(repository, change_id)?;
         let lines: Vec<&str> = output.trim().lines().collect();
 
         let mut file_diffs = Vec::new();
@@ -728,7 +634,7 @@ impl DiffHunk {
         file: &str,
         graph_indent: &str,
     ) -> Result<Vec<Self>> {
-        let output = Jj::run_jj_diff_file(repository, change_id, file)?;
+        let output = jj_commands::diff_file(repository, change_id, file)?;
         let output_lines: Vec<&str> = output.trim().lines().collect();
 
         let hunk_regex = Regex::new(r"@@ -(\d+),(\d+) \+(\d+),(\d+) @@")?;

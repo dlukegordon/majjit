@@ -92,7 +92,7 @@ fn handle_msg(model: &mut Model, msg: Message) -> Result<Option<Message>> {
             model.toggle_fold(list_idx)?;
         }
         Message::Refresh => {
-            model.refresh()?;
+            model.sync()?;
         }
     };
 

@@ -16,7 +16,7 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled("revset: ", Style::default().fg(Color::Blue)),
-        Span::styled(model.jj.revset(), Style::default().fg(Color::Green)),
+        Span::styled(&model.revset, Style::default().fg(Color::Green)),
     ]));
 
     let log_list =

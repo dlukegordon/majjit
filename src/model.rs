@@ -1,4 +1,4 @@
-use crate::jj::{Jj, TreePosition};
+use crate::jj_log::{JjLog, TreePosition};
 
 use anyhow::{Result, anyhow};
 use ratatui::{text::Text, widgets::ListState};
@@ -12,51 +12,58 @@ pub enum State {
 
 #[derive(Debug)]
 pub struct Model {
+    pub repository: String,
+    pub revset: String,
     pub state: State,
-    pub jj: Jj,
+    pub jj_log: JjLog,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
     pub log_list_tree_positions: Vec<TreePosition>,
 }
 
 impl Model {
-    pub fn new(jj: Jj) -> Result<Self> {
+    pub fn new(repository: String, revset: String) -> Result<Self> {
+        let jj_log = JjLog::new(&repository, &revset)?;
         let mut log_list_state = ListState::default();
         log_list_state.select(Some(0));
 
         let mut model = Self {
             state: State::default(),
-            jj,
+            repository,
+            revset,
+            jj_log,
             log_list: Vec::new(),
             log_list_state,
             log_list_tree_positions: Vec::new(),
         };
-        model.update_log_list()?;
+        model.sync_log_list()?;
 
         Ok(model)
     }
 
-    pub fn refresh(&mut self) -> Result<()> {
-        self.jj.load_log_tree()?;
-        self.update_log_list()?;
+    pub fn sync(&mut self) -> Result<()> {
+        self.jj_log.load_log_tree(&self.repository, &self.revset)?;
+        (self.log_list, self.log_list_tree_positions) = self.jj_log.flatten_log()?;
         Ok(())
     }
 
-    fn update_log_list(&mut self) -> Result<()> {
-        (self.log_list, self.log_list_tree_positions) = self.jj.flatten_log()?;
+    fn sync_log_list(&mut self) -> Result<()> {
+        (self.log_list, self.log_list_tree_positions) = self.jj_log.flatten_log()?;
         Ok(())
+    }
+
+    fn get_tree_position(&self, list_idx: usize) -> Result<TreePosition> {
+        self.log_list_tree_positions
+            .get(list_idx)
+            .cloned()
+            .ok_or_else(|| anyhow!("Cannot get tree position for log list index {list_idx}"))
     }
 
     pub fn toggle_fold(&mut self, list_idx: usize) -> Result<()> {
-        let tree_pos = self
-            .log_list_tree_positions
-            .get(list_idx)
-            .ok_or_else(|| anyhow!("Cannot get tree position for log list index {list_idx}"))?;
-
-        let log_list_selected_idx = self.jj.toggle_fold(tree_pos)?;
+        let tree_pos = self.get_tree_position(list_idx)?;
+        let log_list_selected_idx = self.jj_log.toggle_fold(&tree_pos)?;
         self.log_list_state.select(Some(log_list_selected_idx));
-        self.update_log_list()?;
-
+        self.sync_log_list()?;
         Ok(())
     }
 }
