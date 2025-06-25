@@ -3,7 +3,7 @@ use crate::{
     jj_log::{JjLog, TreePosition},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use ratatui::{Terminal, backend::Backend, text::Text, widgets::ListState};
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -27,8 +27,7 @@ pub struct Model {
 impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         let jj_log = JjLog::new(&repository, &revset)?;
-        let mut log_list_state = ListState::default();
-        log_list_state.select(Some(0));
+        let log_list_state = Self::default_log_list_state();
 
         let mut model = Self {
             state: State::default(),
@@ -44,9 +43,16 @@ impl Model {
         Ok(model)
     }
 
+    fn default_log_list_state() -> ListState {
+        let mut log_list_state = ListState::default();
+        log_list_state.select(Some(0));
+        log_list_state
+    }
+
     pub fn sync(&mut self) -> Result<()> {
         self.jj_log.load_log_tree(&self.repository, &self.revset)?;
         self.sync_log_list()?;
+        self.log_list_state = Self::default_log_list_state();
         Ok(())
     }
 
@@ -55,31 +61,129 @@ impl Model {
         Ok(())
     }
 
-    fn get_tree_position(&self, list_idx: usize) -> Result<TreePosition> {
+    fn get_tree_position(&self) -> Result<TreePosition> {
+        let list_idx = match self.log_list_state.selected() {
+            None => bail!("No log list item is selected"),
+            Some(list_idx) => list_idx,
+        };
         self.log_list_tree_positions
             .get(list_idx)
             .cloned()
             .ok_or_else(|| anyhow!("Cannot get tree position for log list index {list_idx}"))
     }
 
-    pub fn toggle_fold(&mut self, list_idx: usize) -> Result<()> {
-        let tree_pos = self.get_tree_position(list_idx)?;
-        let log_list_selected_idx = self.jj_log.toggle_fold(&tree_pos)?;
-        self.log_list_state.select(Some(log_list_selected_idx));
-        self.sync_log_list()?;
+    fn get_selected_change_id(&self) -> Result<Option<&str>> {
+        let tree_pos = self.get_tree_position()?;
+        match self.jj_log.get_tree_commit(&tree_pos) {
+            None => Ok(None),
+            Some(commit) => Ok(Some(&commit.change_id)),
+        }
+    }
+
+    pub fn select_next_log(&mut self) -> Result<()> {
+        let list_idx = match self.log_list_state.selected() {
+            None => bail!("No log list item is selected"),
+            Some(list_idx) => list_idx,
+        };
+
+        let next = if list_idx >= self.log_list.len() - 1 {
+            list_idx
+        } else {
+            list_idx + 1
+        };
+        self.log_list_state.select(Some(next));
         Ok(())
     }
 
-    pub fn describe(&mut self, list_idx: usize, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let tree_pos = self.get_tree_position(list_idx)?;
-        let commit = match self.jj_log.get_tree_commit(&tree_pos) {
-            // If the cursor isn't over a commit or its child nodes, nothing to do
-            None => return Ok(()),
-            Some(commit) => commit,
+    pub fn select_prev_log(&mut self) -> Result<()> {
+        let list_idx = match self.log_list_state.selected() {
+            None => bail!("No log list item is selected"),
+            Some(list_idx) => list_idx,
         };
 
-        jj_commands::describe(&self.repository, &commit.change_id, term)?;
+        let prev = if list_idx == 0 {
+            list_idx
+        } else {
+            list_idx - 1
+        };
+        self.log_list_state.select(Some(prev));
+        Ok(())
+    }
 
+    pub fn toggle_fold(&mut self) -> Result<()> {
+        let tree_pos = self.get_tree_position()?;
+        let log_list_selected_idx = self.jj_log.toggle_fold(&tree_pos)?;
+        self.sync_log_list()?;
+        self.log_list_state.select(Some(log_list_selected_idx));
+        Ok(())
+    }
+
+    pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::describe(&self.repository, change_id, term)?;
+
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_new(&mut self) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::new(&self.repository, change_id)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_abandon(&mut self) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::abandon(&self.repository, change_id)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_undo(&mut self) -> Result<()> {
+        jj_commands::undo(&self.repository)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_commit(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+        jj_commands::commit(&self.repository, term)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_squash(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::squash(&self.repository, change_id, term)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_edit(&mut self) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::edit(&self.repository, change_id)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_fetch(&mut self) -> Result<()> {
+        jj_commands::fetch(&self.repository)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_push(&mut self) -> Result<()> {
+        jj_commands::push(&self.repository)?;
         self.sync()?;
         Ok(())
     }

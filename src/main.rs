@@ -17,7 +17,7 @@ use ratatui::{Terminal, backend::Backend};
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    terminal::install_panic_hook();
+    jj_commands::ensure_valid_repo(&args.repository)?;
     let terminal = terminal::init_terminal()?;
 
     let model = Model::new(args.repository, args.revisions)?;

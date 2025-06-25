@@ -1,6 +1,6 @@
 use crate::model::{Model, State};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{Terminal, backend::Backend};
 use std::time::Duration;
@@ -15,6 +15,14 @@ enum Message {
     ToggleLogListFold,
     Refresh,
     Describe,
+    New,
+    Abandon,
+    Undo,
+    Commit,
+    Squash,
+    Edit,
+    Fetch,
+    Push,
 }
 
 pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Result<()> {
@@ -53,6 +61,14 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
             Some(Message::Refresh)
         }
         KeyCode::Char('d') => Some(Message::Describe),
+        KeyCode::Char('n') => Some(Message::New),
+        KeyCode::Char('a') => Some(Message::Abandon),
+        KeyCode::Char('u') => Some(Message::Undo),
+        KeyCode::Char('c') => Some(Message::Commit),
+        KeyCode::Char('s') => Some(Message::Squash),
+        KeyCode::Char('e') => Some(Message::Edit),
+        KeyCode::Char('f') => Some(Message::Fetch),
+        KeyCode::Char('p') => Some(Message::Push),
         _ => None,
     }
 }
@@ -70,39 +86,48 @@ fn handle_msg(
     model: &mut Model,
     msg: Message,
 ) -> Result<Option<Message>> {
-    let list_idx = match model.log_list_state.selected() {
-        None => bail!("No log list item is selected"),
-        Some(list_idx) => list_idx,
-    };
-
     match msg {
         Message::Quit => {
             model.state = State::Quit;
         }
         Message::SelectNextLogItem => {
-            let next = if list_idx >= model.log_list.len() - 1 {
-                list_idx
-            } else {
-                list_idx + 1
-            };
-            model.log_list_state.select(Some(next));
+            model.select_next_log()?;
         }
         Message::SelectPrevLogItem => {
-            let prev = if list_idx == 0 {
-                list_idx
-            } else {
-                list_idx - 1
-            };
-            model.log_list_state.select(Some(prev));
+            model.select_prev_log()?;
         }
         Message::ToggleLogListFold => {
-            model.toggle_fold(list_idx)?;
+            model.toggle_fold()?;
         }
         Message::Refresh => {
             model.sync()?;
         }
         Message::Describe => {
-            model.describe(list_idx, term)?;
+            model.jj_describe(term)?;
+        }
+        Message::New => {
+            model.jj_new()?;
+        }
+        Message::Abandon => {
+            model.jj_abandon()?;
+        }
+        Message::Undo => {
+            model.jj_undo()?;
+        }
+        Message::Commit => {
+            model.jj_commit(term)?;
+        }
+        Message::Squash => {
+            model.jj_squash(term)?;
+        }
+        Message::Edit => {
+            model.jj_edit()?;
+        }
+        Message::Fetch => {
+            model.jj_fetch()?;
+        }
+        Message::Push => {
+            model.jj_push()?;
         }
     };
 

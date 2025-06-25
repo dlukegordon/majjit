@@ -11,6 +11,7 @@ use ratatui::{
 use std::{io::stdout, panic};
 
 pub fn init_terminal() -> Result<Terminal<impl Backend>> {
+    install_panic_hook();
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;

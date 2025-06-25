@@ -12,7 +12,6 @@ pub struct JjLog {
 
 impl JjLog {
     pub fn new(repository: &str, revset: &str) -> Result<Self> {
-        jj_commands::ensure_valid_repo(&repository)?;
         let mut jj_log = JjLog {
             log_tree: Vec::new(),
         };

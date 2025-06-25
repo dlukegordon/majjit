@@ -58,7 +58,9 @@ fn get_jj_command(repository: &str) -> Command {
                 "#,
         )
         .arg("--repository")
-        .arg(repository);
+        .arg(repository)
+        // TODO: this should be toggleable
+        .arg("--ignore-immutable");
 
     command
 }
@@ -121,7 +123,55 @@ pub fn describe(
     change_id: &str,
     terminal: &mut Terminal<impl Backend>,
 ) -> Result<()> {
-    let args = ["describe", change_id, "--ignore-immutable"];
+    let args = ["describe", change_id];
     run_jj_command_interactive(repository, &args, terminal)?;
+    Ok(())
+}
+
+pub fn new(repository: &str, change_id: &str) -> Result<()> {
+    let args = ["new", change_id];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn abandon(repository: &str, change_id: &str) -> Result<()> {
+    let args = ["abandon", change_id];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn undo(repository: &str) -> Result<()> {
+    let args = ["undo"];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<()> {
+    let args = ["commit"];
+    run_jj_command_interactive(repository, &args, term)?;
+    Ok(())
+}
+
+pub fn squash(repository: &str, change_id: &str, term: &mut Terminal<impl Backend>) -> Result<()> {
+    let args = ["squash", "-r", change_id];
+    run_jj_command_interactive(repository, &args, term)?;
+    Ok(())
+}
+
+pub fn edit(repository: &str, change_id: &str) -> Result<()> {
+    let args = ["edit", change_id];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn fetch(repository: &str) -> Result<()> {
+    let args = ["git", "fetch"];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn push(repository: &str) -> Result<()> {
+    let args = ["git", "push"];
+    run_jj_command(repository, &args)?;
     Ok(())
 }
