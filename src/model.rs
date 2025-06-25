@@ -26,33 +26,32 @@ pub struct Model {
 
 impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
-        let jj_log = JjLog::new(&repository, &revset)?;
-        let log_list_state = Self::default_log_list_state();
-
         let mut model = Self {
             state: State::default(),
+            jj_log: JjLog::new(&repository, &revset)?,
+            log_list: Vec::new(),
+            log_list_state: ListState::default(),
+            log_list_tree_positions: Vec::new(),
             repository,
             revset,
-            jj_log,
-            log_list: Vec::new(),
-            log_list_state,
-            log_list_tree_positions: Vec::new(),
         };
-        model.sync_log_list()?;
+        model.sync()?;
 
         Ok(model)
     }
 
-    fn default_log_list_state() -> ListState {
-        let mut log_list_state = ListState::default();
-        log_list_state.select(Some(0));
-        log_list_state
+    fn reset_log_list_state(&mut self) {
+        let list_idx = match self.jj_log.get_current_commit() {
+            None => 0,
+            Some(commit) => commit.flat_log_idx,
+        };
+        self.log_list_state.select(Some(list_idx));
     }
 
     pub fn sync(&mut self) -> Result<()> {
         self.jj_log.load_log_tree(&self.repository, &self.revset)?;
         self.sync_log_list()?;
-        self.log_list_state = Self::default_log_list_state();
+        self.reset_log_list_state();
         Ok(())
     }
 

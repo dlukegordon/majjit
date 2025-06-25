@@ -15,7 +15,6 @@ impl JjLog {
         let mut jj_log = JjLog {
             log_tree: Vec::new(),
         };
-        jj_log.load_log_tree(repository, revset)?;
         Ok(jj_log)
     }
 
@@ -95,6 +94,14 @@ impl JjLog {
             CommitOrText::InfoText(_) => None,
             CommitOrText::Commit(commit) => Some(commit),
         }
+    }
+
+    pub fn get_current_commit(&self) -> Option<&Commit> {
+        // TODO: cache this instead of looping each time?
+        self.log_tree.iter().find_map(|item| match item {
+            CommitOrText::Commit(commit) if commit.current_working_copy => Some(commit),
+            _ => None,
+        })
     }
 
     pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
@@ -201,7 +208,7 @@ pub struct Commit {
     repository: String,
     pub change_id: String,
     _commit_id: String,
-    current_working_copy: bool,
+    pub current_working_copy: bool,
     symbol: String,
     line1_graph_chars: String,
     line2_graph_chars: String,
@@ -210,7 +217,7 @@ pub struct Commit {
     graph_indent: String,
     unfolded: bool,
     file_diffs: Option<Vec<FileDiff>>,
-    flat_log_idx: usize,
+    pub flat_log_idx: usize,
 }
 
 impl Commit {
