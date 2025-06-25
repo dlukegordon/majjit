@@ -11,11 +11,10 @@ pub struct JjLog {
 }
 
 impl JjLog {
-    pub fn new(repository: &str, revset: &str) -> Result<Self> {
-        let mut jj_log = JjLog {
+    pub fn new() -> Result<Self> {
+        Ok(JjLog {
             log_tree: Vec::new(),
-        };
-        Ok(jj_log)
+        })
     }
 
     pub fn load_log_tree(&mut self, repository: &str, revset: &str) -> Result<()> {

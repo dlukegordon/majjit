@@ -91,10 +91,10 @@ fn handle_msg(
             model.state = State::Quit;
         }
         Message::SelectNextLogItem => {
-            model.select_next_log()?;
+            model.select_next_log();
         }
         Message::SelectPrevLogItem => {
-            model.select_prev_log()?;
+            model.select_prev_log();
         }
         Message::ToggleLogListFold => {
             model.toggle_fold()?;

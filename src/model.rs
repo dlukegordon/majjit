@@ -28,7 +28,7 @@ impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         let mut model = Self {
             state: State::default(),
-            jj_log: JjLog::new(&repository, &revset)?,
+            jj_log: JjLog::new()?,
             log_list: Vec::new(),
             log_list_state: ListState::default(),
             log_list_tree_positions: Vec::new(),
@@ -79,34 +79,12 @@ impl Model {
         }
     }
 
-    pub fn select_next_log(&mut self) -> Result<()> {
-        let list_idx = match self.log_list_state.selected() {
-            None => bail!("No log list item is selected"),
-            Some(list_idx) => list_idx,
-        };
-
-        let next = if list_idx >= self.log_list.len() - 1 {
-            list_idx
-        } else {
-            list_idx + 1
-        };
-        self.log_list_state.select(Some(next));
-        Ok(())
+    pub fn select_next_log(&mut self) {
+        self.log_list_state.select_next();
     }
 
-    pub fn select_prev_log(&mut self) -> Result<()> {
-        let list_idx = match self.log_list_state.selected() {
-            None => bail!("No log list item is selected"),
-            Some(list_idx) => list_idx,
-        };
-
-        let prev = if list_idx == 0 {
-            list_idx
-        } else {
-            list_idx - 1
-        };
-        self.log_list_state.select(Some(prev));
-        Ok(())
+    pub fn select_prev_log(&mut self) {
+        self.log_list_state.select_previous();
     }
 
     pub fn toggle_fold(&mut self) -> Result<()> {
