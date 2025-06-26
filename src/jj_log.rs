@@ -1,7 +1,10 @@
 use crate::jj_commands;
 use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
-use ratatui::text::Text;
+use ratatui::{
+    style::{Color, Style, Stylize},
+    text::{Line, Span, Text},
+};
 use regex::Regex;
 use std::fmt;
 
@@ -306,20 +309,24 @@ impl Commit {
 
 impl LogTreeNode for Commit {
     fn render(&self) -> Result<Text<'static>> {
-        let line1 = format!(
-            "{}{} {} {}",
-            self.line1_graph_chars,
-            self.symbol,
+        let mut line1 = Line::from(vec![
+            Span::raw(self.line1_graph_chars.clone()),
+            Span::raw(self.symbol.clone()),
+            Span::raw(" "),
             fold_symbol(self.unfolded),
-            self.pretty_line1
-        );
-        let line2 = if self.pretty_line2 == "" {
-            "".to_string()
-        } else {
-            format!("\n{} {}", self.line2_graph_chars, self.pretty_line2)
+            Span::raw(" "),
+        ]);
+        line1.extend(self.pretty_line1.into_text()?.lines[0].spans.clone());
+        let mut lines = vec![line1];
+        if self.pretty_line2 != "" {
+            let mut line2 = Line::from(vec![
+                Span::raw(self.line2_graph_chars.clone()),
+                Span::raw(" "),
+            ]);
+            line2.extend(self.pretty_line2.into_text()?.lines[0].spans.clone());
+            lines.push(line2);
         };
-
-        Ok(format!("{}{}", line1, line2).into_text()?)
+        Ok(Text::from(lines))
     }
 
     fn flatten(
@@ -500,14 +507,16 @@ impl FileDiff {
 
 impl LogTreeNode for FileDiff {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!(
-            "{}{} \x1b[35m{}  {}\x1b[0m",
-            self.graph_indent,
+        let line = Line::from(vec![
+            Span::raw(self.graph_indent.clone()),
             fold_symbol(self.unfolded),
-            self.status,
-            self.description,
-        )
-        .into_text()?)
+            Span::raw(" "),
+            Span::styled(
+                format!("{}  {}", self.status, self.description),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]);
+        Ok(Text::from(line))
     }
 
     fn flatten(
@@ -717,13 +726,17 @@ impl DiffHunk {
 
 impl LogTreeNode for DiffHunk {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!(
-            "{}{} \x1b[45m\x1b[30m{}\x1b[0m",
-            self.graph_indent,
-            fold_symbol(self.unfolded),
-            self.clean_string
-        )
-        .into_text()?)
+        let mut line = Line::from(vec![
+            Span::styled(
+                self.graph_indent.clone(),
+                Style::default().bg(Color::Reset).fg(Color::Reset),
+            ),
+            fold_symbol(self.unfolded).patch_style(Style::default().bg(Color::Reset)),
+            Span::styled(" ", Style::default().bg(Color::Reset).fg(Color::Reset)),
+            Span::raw(self.clean_string.clone()),
+        ]);
+        line.style = Style::default().bg(Color::Magenta).fg(Color::Black);
+        Ok(Text::from(line))
     }
 
     fn flatten(
@@ -785,7 +798,20 @@ impl DiffHunkLine {
 
 impl LogTreeNode for DiffHunkLine {
     fn render(&self) -> Result<Text<'static>> {
-        Ok(format!("{0}  {1}", self.graph_indent, self.pretty_string).into_text()?)
+        let clean_string = strip_ansi(&self.pretty_string);
+        let mut line = Line::from(vec![Span::raw(self.graph_indent.clone()), Span::raw("  ")]);
+
+        for span in self.pretty_string.into_text()?.lines[0].spans.clone() {
+            let span = if clean_string.starts_with("+") || clean_string.starts_with("-") {
+                let style = span.style.clone().bold();
+                span.style(style)
+            } else {
+                span
+            };
+            line.spans.push(span);
+        }
+
+        Ok(Text::from(line))
     }
 
     fn flatten(
@@ -797,7 +823,6 @@ impl LogTreeNode for DiffHunkLine {
         self.flat_log_idx = log_list.len();
         log_list.push(self.render()?);
         log_list_tree_positions.push(tree_pos);
-
         Ok(())
     }
 
@@ -815,7 +840,7 @@ fn strip_ansi(pretty_str: &str) -> String {
     ansi_regex.replace_all(&pretty_str, "").to_string()
 }
 
-fn fold_symbol(unfolded: bool) -> String {
+fn fold_symbol(unfolded: bool) -> Span<'static> {
     let symbol = if unfolded { "▾" } else { "▸" };
-    format!("\x1b[90m{symbol}\x1b[0m")
+    Span::styled(symbol, Style::default().fg(Color::DarkGray))
 }
