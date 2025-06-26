@@ -58,12 +58,10 @@ impl JjLog {
         };
 
         // Traverse to file diff
-        let file_diff = match &mut commit.file_diffs {
-            None => {
-                bail!("Trying to get unloaded file diffs for commit");
-            }
-            Some(file_diffs) => &mut file_diffs[file_diff_idx],
-        };
+        if !commit.loaded {
+            bail!("Trying to get unloaded file diffs for commit");
+        }
+        let file_diff = &mut commit.file_diffs[file_diff_idx];
         let diff_hunk_idx = match tree_pos.diff_hunk_idx {
             None => {
                 return Ok(file_diff);
@@ -72,12 +70,10 @@ impl JjLog {
         };
 
         // Traverse to diff hunk
-        let diff_hunk = match &mut file_diff.diff_hunks {
-            None => {
-                bail!("Trying to get unloaded diff hunks for file diff");
-            }
-            Some(diff_hunks) => &mut diff_hunks[diff_hunk_idx],
-        };
+        if !file_diff.loaded {
+            bail!("Trying to get unloaded diff hunks for file diff");
+        }
+        let diff_hunk = &mut file_diff.diff_hunks[diff_hunk_idx];
         let diff_hunk_line_idx = match tree_pos.diff_hunk_line_idx {
             None => {
                 return Ok(diff_hunk);
@@ -218,7 +214,8 @@ pub struct Commit {
     pretty_line2: String,
     graph_indent: String,
     unfolded: bool,
-    file_diffs: Option<Vec<FileDiff>>,
+    loaded: bool,
+    file_diffs: Vec<FileDiff>,
     pub flat_log_idx: usize,
 }
 
@@ -294,7 +291,8 @@ impl Commit {
             pretty_line2,
             graph_indent,
             unfolded: false,
-            file_diffs: None,
+            loaded: false,
+            file_diffs: Vec::new(),
             flat_log_idx: 0,
         };
 
@@ -343,14 +341,12 @@ impl LogTreeNode for Commit {
             return Ok(());
         }
 
-        if let Some(file_diffs) = &mut self.file_diffs {
-            for (file_diff_idx, file_diff) in file_diffs.iter_mut().enumerate() {
-                file_diff.flatten(
-                    TreePosition::new(tree_pos.commit_or_text_idx, Some(file_diff_idx), None, None),
-                    log_list,
-                    log_list_tree_positions,
-                )?;
-            }
+        for (file_diff_idx, file_diff) in self.file_diffs.iter_mut().enumerate() {
+            file_diff.flatten(
+                TreePosition::new(tree_pos.commit_or_text_idx, Some(file_diff_idx), None, None),
+                log_list,
+                log_list_tree_positions,
+            )?;
         }
 
         Ok(())
@@ -366,10 +362,11 @@ impl LogTreeNode for Commit {
             return Ok(());
         }
 
-        if let None = self.file_diffs {
+        if !self.loaded {
             let file_diffs =
                 FileDiff::load_all(&self.repository, &self.change_id, &self.graph_indent)?;
-            self.file_diffs = Some(file_diffs);
+            self.file_diffs = file_diffs;
+            self.loaded = true;
         }
 
         Ok(())
@@ -426,7 +423,8 @@ struct FileDiff {
     status: FileDiffStatus,
     graph_indent: String,
     unfolded: bool,
-    diff_hunks: Option<Vec<DiffHunk>>,
+    loaded: bool,
+    diff_hunks: Vec<DiffHunk>,
     flat_log_idx: usize,
 }
 
@@ -482,7 +480,8 @@ impl FileDiff {
             status,
             graph_indent,
             unfolded: false,
-            diff_hunks: None,
+            loaded: false,
+            diff_hunks: Vec::new(),
             flat_log_idx: 0,
         })
     }
@@ -533,19 +532,17 @@ impl LogTreeNode for FileDiff {
             return Ok(());
         }
 
-        if let Some(diff_hunks) = &mut self.diff_hunks {
-            for (diff_hunk_idx, diff_hunk) in diff_hunks.iter_mut().enumerate() {
-                diff_hunk.flatten(
-                    TreePosition::new(
-                        tree_pos.commit_or_text_idx,
-                        tree_pos.file_diff_idx,
-                        Some(diff_hunk_idx),
-                        None,
-                    ),
-                    log_list,
-                    log_list_tree_positions,
-                )?;
-            }
+        for (diff_hunk_idx, diff_hunk) in self.diff_hunks.iter_mut().enumerate() {
+            diff_hunk.flatten(
+                TreePosition::new(
+                    tree_pos.commit_or_text_idx,
+                    tree_pos.file_diff_idx,
+                    Some(diff_hunk_idx),
+                    None,
+                ),
+                log_list,
+                log_list_tree_positions,
+            )?;
         }
 
         Ok(())
@@ -561,14 +558,15 @@ impl LogTreeNode for FileDiff {
             return Ok(());
         }
 
-        if let None = self.diff_hunks {
+        if !self.loaded {
             let diff_hunks = DiffHunk::load_all(
                 &self.repository,
                 &self.change_id,
                 &self.path,
                 &self.graph_indent,
             )?;
-            self.diff_hunks = Some(diff_hunks);
+            self.diff_hunks = diff_hunks;
+            self.loaded = true;
         }
 
         Ok(())
