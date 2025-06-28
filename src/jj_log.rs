@@ -10,7 +10,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct JjLog {
-    log_tree: Vec<CommitOrText>,
+    pub log_tree: Vec<CommitOrText>,
 }
 
 impl JjLog {
@@ -31,7 +31,7 @@ impl JjLog {
 
         for (commit_or_text_idx, commit_or_text) in self.log_tree.iter_mut().enumerate() {
             commit_or_text.flatten(
-                TreePosition::new(commit_or_text_idx, None, None, None),
+                vec![commit_or_text_idx],
                 &mut log_list,
                 &mut log_list_tree_positions,
             )?;
@@ -40,9 +40,9 @@ impl JjLog {
         Ok((log_list, log_list_tree_positions))
     }
 
-    fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
+    pub fn get_tree_node(&mut self, tree_pos: &TreePosition) -> Result<&mut dyn LogTreeNode> {
         // Traverse to commit
-        let commit_or_text = &mut self.log_tree[tree_pos.commit_or_text_idx];
+        let commit_or_text = &mut self.log_tree[tree_pos[COMMIT_OR_TEXT_IDX]];
         let commit = match commit_or_text {
             CommitOrText::InfoText(info_text) => {
                 return Ok(info_text);
@@ -50,11 +50,10 @@ impl JjLog {
             CommitOrText::Commit(commit) => commit,
         };
 
-        let file_diff_idx = match tree_pos.file_diff_idx {
-            None => {
-                return Ok(commit);
-            }
-            Some(file_diff_idx) => file_diff_idx,
+        let file_diff_idx = if tree_pos.len() <= FILE_DIFF_IDX {
+            return Ok(commit);
+        } else {
+            tree_pos[FILE_DIFF_IDX]
         };
 
         // Traverse to file diff
@@ -62,11 +61,10 @@ impl JjLog {
             bail!("Trying to get unloaded file diffs for commit");
         }
         let file_diff = &mut commit.file_diffs[file_diff_idx];
-        let diff_hunk_idx = match tree_pos.diff_hunk_idx {
-            None => {
-                return Ok(file_diff);
-            }
-            Some(diff_hunk_idx) => diff_hunk_idx,
+        let diff_hunk_idx = if tree_pos.len() <= DIFF_HUNK_IDX {
+            return Ok(file_diff);
+        } else {
+            tree_pos[DIFF_HUNK_IDX]
         };
 
         // Traverse to diff hunk
@@ -74,11 +72,10 @@ impl JjLog {
             bail!("Trying to get unloaded diff hunks for file diff");
         }
         let diff_hunk = &mut file_diff.diff_hunks[diff_hunk_idx];
-        let diff_hunk_line_idx = match tree_pos.diff_hunk_line_idx {
-            None => {
-                return Ok(diff_hunk);
-            }
-            Some(diff_hunk_line_idx) => diff_hunk_line_idx,
+        let diff_hunk_line_idx = if tree_pos.len() <= DIFF_HUNK_LINE_IDX {
+            return Ok(diff_hunk);
+        } else {
+            tree_pos[DIFF_HUNK_LINE_IDX]
         };
 
         // Traverse to diff hunk line
@@ -87,7 +84,7 @@ impl JjLog {
     }
 
     pub fn get_tree_commit(&self, tree_pos: &TreePosition) -> Option<&Commit> {
-        let commit_or_text = &self.log_tree[tree_pos.commit_or_text_idx];
+        let commit_or_text = &self.log_tree[tree_pos[COMMIT_OR_TEXT_IDX]];
         match commit_or_text {
             CommitOrText::InfoText(_) => None,
             CommitOrText::Commit(commit) => Some(commit),
@@ -104,14 +101,14 @@ impl JjLog {
 
     pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
         let mut tree_pos = tree_pos.clone();
-        tree_pos.diff_hunk_line_idx = None;
+        tree_pos.truncate(DIFF_HUNK_IDX + 1);
         let node = self.get_tree_node(&tree_pos)?;
         node.toggle_fold()?;
         Ok(node.flat_log_idx())
     }
 }
 
-trait LogTreeNode {
+pub trait LogTreeNode {
     fn render(&self) -> Result<Text<'static>>;
     fn flatten(
         &mut self,
@@ -120,35 +117,28 @@ trait LogTreeNode {
         log_list_tree_positions: &mut Vec<TreePosition>,
     ) -> Result<()>;
     fn flat_log_idx(&self) -> usize;
+    fn children(&self) -> Vec<&dyn LogTreeNode>;
     fn toggle_fold(&mut self) -> Result<()>;
 }
 
-#[derive(Debug, Clone)]
-pub struct TreePosition {
-    pub commit_or_text_idx: usize,
-    pub file_diff_idx: Option<usize>,
-    pub diff_hunk_idx: Option<usize>,
-    pub diff_hunk_line_idx: Option<usize>,
-}
+pub type TreePosition = Vec<usize>;
+pub const COMMIT_OR_TEXT_IDX: usize = 0;
+pub const FILE_DIFF_IDX: usize = 1;
+pub const DIFF_HUNK_IDX: usize = 2;
+pub const DIFF_HUNK_LINE_IDX: usize = 3;
 
-impl TreePosition {
-    pub fn new(
-        commit_or_text_idx: usize,
-        file_diff_idx: Option<usize>,
-        diff_hunk_idx: Option<usize>,
-        diff_hunk_line_idx: Option<usize>,
-    ) -> Self {
-        Self {
-            commit_or_text_idx,
-            file_diff_idx,
-            diff_hunk_idx,
-            diff_hunk_line_idx,
-        }
+pub fn get_parent_tree_position(tree_pos: &TreePosition) -> Option<TreePosition> {
+    let mut tree_pos = tree_pos.clone();
+    if tree_pos.len() > 1 {
+        tree_pos.pop();
+        Some(tree_pos)
+    } else {
+        None
     }
 }
 
 #[derive(Debug)]
-enum CommitOrText {
+pub enum CommitOrText {
     Commit(Commit),
     InfoText(InfoText),
 }
@@ -197,6 +187,13 @@ impl CommitOrText {
             CommitOrText::InfoText(info_text) => {
                 info_text.flatten(tree_pos, log_list, log_list_tree_positions)
             }
+        }
+    }
+
+    pub fn flat_log_idx(&self) -> usize {
+        match self {
+            CommitOrText::Commit(commit) => commit.flat_log_idx(),
+            CommitOrText::InfoText(info_text) => info_text.flat_log_idx,
         }
     }
 }
@@ -342,11 +339,9 @@ impl LogTreeNode for Commit {
         }
 
         for (file_diff_idx, file_diff) in self.file_diffs.iter_mut().enumerate() {
-            file_diff.flatten(
-                TreePosition::new(tree_pos.commit_or_text_idx, Some(file_diff_idx), None, None),
-                log_list,
-                log_list_tree_positions,
-            )?;
+            let mut new_pos = tree_pos.clone();
+            new_pos.push(file_diff_idx);
+            file_diff.flatten(new_pos, log_list, log_list_tree_positions)?;
         }
 
         Ok(())
@@ -354,6 +349,13 @@ impl LogTreeNode for Commit {
 
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
+    }
+
+    fn children(&self) -> Vec<&dyn LogTreeNode> {
+        self.file_diffs
+            .iter()
+            .map(|fd| fd as &dyn LogTreeNode)
+            .collect()
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -374,7 +376,7 @@ impl LogTreeNode for Commit {
 }
 
 #[derive(Debug)]
-struct InfoText {
+pub struct InfoText {
     pretty_string: String,
     flat_log_idx: usize,
 }
@@ -407,6 +409,10 @@ impl LogTreeNode for InfoText {
 
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
+    }
+
+    fn children(&self) -> Vec<&dyn LogTreeNode> {
+        Vec::new()
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -533,16 +539,9 @@ impl LogTreeNode for FileDiff {
         }
 
         for (diff_hunk_idx, diff_hunk) in self.diff_hunks.iter_mut().enumerate() {
-            diff_hunk.flatten(
-                TreePosition::new(
-                    tree_pos.commit_or_text_idx,
-                    tree_pos.file_diff_idx,
-                    Some(diff_hunk_idx),
-                    None,
-                ),
-                log_list,
-                log_list_tree_positions,
-            )?;
+            let mut new_pos = tree_pos.clone();
+            new_pos.push(diff_hunk_idx);
+            diff_hunk.flatten(new_pos, log_list, log_list_tree_positions)?;
         }
 
         Ok(())
@@ -550,6 +549,13 @@ impl LogTreeNode for FileDiff {
 
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
+    }
+
+    fn children(&self) -> Vec<&dyn LogTreeNode> {
+        self.diff_hunks
+            .iter()
+            .map(|dh| dh as &dyn LogTreeNode)
+            .collect()
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -752,16 +758,9 @@ impl LogTreeNode for DiffHunk {
         }
 
         for (diff_hunk_line_idx, diff_hunk_line) in self.diff_hunk_lines.iter_mut().enumerate() {
-            diff_hunk_line.flatten(
-                TreePosition::new(
-                    tree_pos.commit_or_text_idx,
-                    tree_pos.file_diff_idx,
-                    tree_pos.diff_hunk_idx,
-                    Some(diff_hunk_line_idx),
-                ),
-                log_list,
-                log_list_tree_positions,
-            )?;
+            let mut new_pos = tree_pos.clone();
+            new_pos.push(diff_hunk_line_idx);
+            diff_hunk_line.flatten(new_pos, log_list, log_list_tree_positions)?;
         }
 
         Ok(())
@@ -769,6 +768,13 @@ impl LogTreeNode for DiffHunk {
 
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
+    }
+
+    fn children(&self) -> Vec<&dyn LogTreeNode> {
+        self.diff_hunk_lines
+            .iter()
+            .map(|hl| hl as &dyn LogTreeNode)
+            .collect()
     }
 
     fn toggle_fold(&mut self) -> Result<()> {
@@ -826,6 +832,10 @@ impl LogTreeNode for DiffHunkLine {
 
     fn flat_log_idx(&self) -> usize {
         self.flat_log_idx
+    }
+
+    fn children(&self) -> Vec<&dyn LogTreeNode> {
+        Vec::new()
     }
 
     fn toggle_fold(&mut self) -> Result<()> {

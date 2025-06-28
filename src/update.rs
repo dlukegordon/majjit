@@ -10,8 +10,11 @@ const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
 #[derive(PartialEq)]
 enum Message {
     Quit,
-    SelectNextLogItem,
-    SelectPrevLogItem,
+    SelectNextNode,
+    SelectPrevNode,
+    SelectParentNode,
+    SelectNextSiblingNode,
+    SelectPrevSiblingNode,
     ToggleLogListFold,
     Refresh,
     Describe,
@@ -54,8 +57,11 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Char('q') => Some(Message::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
-        KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextLogItem),
-        KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevLogItem),
+        KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextNode),
+        KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevNode),
+        KeyCode::Left | KeyCode::Char('h') => Some(Message::SelectPrevSiblingNode),
+        KeyCode::Right | KeyCode::Char('l') => Some(Message::SelectNextSiblingNode),
+        KeyCode::Char('K') => Some(Message::SelectParentNode),
         KeyCode::Tab => Some(Message::ToggleLogListFold),
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(Message::Refresh)
@@ -75,8 +81,8 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
 
 fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
     match mouse.kind {
-        MouseEventKind::ScrollDown => Some(Message::SelectNextLogItem),
-        MouseEventKind::ScrollUp => Some(Message::SelectPrevLogItem),
+        MouseEventKind::ScrollDown => Some(Message::SelectNextNode),
+        MouseEventKind::ScrollUp => Some(Message::SelectPrevNode),
         _ => None,
     }
 }
@@ -90,14 +96,23 @@ fn handle_msg(
         Message::Quit => {
             model.state = State::Quit;
         }
-        Message::SelectNextLogItem => {
-            model.select_next_log();
+        Message::SelectNextNode => {
+            model.select_next_node();
         }
-        Message::SelectPrevLogItem => {
-            model.select_prev_log();
+        Message::SelectPrevNode => {
+            model.select_prev_node();
+        }
+        Message::SelectParentNode => {
+            model.select_parent_node()?;
+        }
+        Message::SelectNextSiblingNode => {
+            model.select_current_next_sibling_node()?;
+        }
+        Message::SelectPrevSiblingNode => {
+            model.select_current_prev_sibling_node()?;
         }
         Message::ToggleLogListFold => {
-            model.toggle_fold()?;
+            model.toggle_current_fold()?;
         }
         Message::Refresh => {
             model.sync()?;
