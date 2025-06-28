@@ -1,6 +1,7 @@
 use crate::{
     jj_commands,
     jj_log::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
+    update::Message,
 };
 
 use anyhow::{Result, anyhow, bail};
@@ -22,6 +23,7 @@ pub struct Model {
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
     pub log_list_tree_positions: Vec<TreePosition>,
+    pub queued_messages: Vec<Message>,
 }
 
 impl Model {
@@ -32,6 +34,7 @@ impl Model {
             log_list: Vec::new(),
             log_list_state: ListState::default(),
             log_list_tree_positions: Vec::new(),
+            queued_messages: Vec::new(),
             repository,
             revset,
         };
@@ -174,6 +177,36 @@ impl Model {
         self.sync_log_list()?;
         self.log_list_state.select(Some(log_list_selected_idx));
         Ok(())
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.select_next_node();
+        let current_offset = self.log_list_state.offset();
+        *self.log_list_state.offset_mut() = current_offset + 1;
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.select_prev_node();
+        let current_offset = self.log_list_state.offset();
+        *self.log_list_state.offset_mut() = current_offset.saturating_sub(1);
+    }
+
+    pub fn queue_scroll_down_animation(&mut self, scroll_amount: usize, delay_millis: u64) {
+        for _ in 0..scroll_amount {
+            self.queued_messages.push(Message::ScrollDown);
+            self.queued_messages.push(Message::Sleep {
+                millis: delay_millis,
+            });
+        }
+    }
+
+    pub fn queue_scroll_up_animation(&mut self, scroll_amount: usize, delay_millis: u64) {
+        for _ in 0..scroll_amount {
+            self.queued_messages.push(Message::ScrollUp);
+            self.queued_messages.push(Message::Sleep {
+                millis: delay_millis,
+            });
+        }
     }
 
     pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {

@@ -19,9 +19,8 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
         Span::styled(&model.revset, Style::default().fg(Color::Green)),
     ]));
 
-    let log_list = List::new(model.log_list.clone())
-        .highlight_style(Style::new().bold().bg(Color::Black))
-        .scroll_padding(20);
+    let log_list =
+        List::new(model.log_list.clone()).highlight_style(Style::new().bold().bg(Color::Black));
 
     frame.render_widget(header, layout[0]);
     frame.render_stateful_widget(log_list, layout[1], &mut model.log_list_state);
