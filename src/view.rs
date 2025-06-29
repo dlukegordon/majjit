@@ -24,4 +24,6 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
 
     frame.render_widget(header, layout[0]);
     frame.render_stateful_widget(log_list, layout[1], &mut model.log_list_state);
+
+    model.log_list_height = layout[1].height as usize;
 }

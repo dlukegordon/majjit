@@ -3,7 +3,6 @@ use crate::model::{Model, State};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{Terminal, backend::Backend};
-use std::thread;
 use std::time::Duration;
 
 const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
@@ -11,7 +10,6 @@ const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
 #[derive(Debug, PartialEq)]
 pub enum Message {
     Quit,
-    Sleep { millis: u64 },
     SelectNextNode,
     SelectPrevNode,
     SelectParentNode,
@@ -20,8 +18,8 @@ pub enum Message {
     ToggleLogListFold,
     ScrollDown,
     ScrollUp,
-    ScrollDownAnimation,
-    ScrollUpAnimation,
+    ScrollDownPage,
+    ScrollUpPage,
     Refresh,
     Describe,
     New,
@@ -35,11 +33,7 @@ pub enum Message {
 }
 
 pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Result<()> {
-    let mut current_msg = if let Some(queued_msg) = model.queued_messages.pop() {
-        Some(queued_msg)
-    } else {
-        handle_event(model)?
-    };
+    let mut current_msg = handle_event(model)?;
 
     while let Some(msg) = current_msg {
         current_msg = handle_msg(terminal, model, msg)?;
@@ -70,6 +64,8 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
         KeyCode::Down | KeyCode::Char('j') => Some(Message::SelectNextNode),
         KeyCode::Up | KeyCode::Char('k') => Some(Message::SelectPrevNode),
+        KeyCode::PageDown => Some(Message::ScrollDownPage),
+        KeyCode::PageUp => Some(Message::ScrollUpPage),
         KeyCode::Left | KeyCode::Char('h') => Some(Message::SelectPrevSiblingNode),
         KeyCode::Right | KeyCode::Char('l') => Some(Message::SelectNextSiblingNode),
         KeyCode::Char('K') => Some(Message::SelectParentNode),
@@ -92,8 +88,8 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
 
 fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
     match mouse.kind {
-        MouseEventKind::ScrollDown => Some(Message::ScrollDownAnimation),
-        MouseEventKind::ScrollUp => Some(Message::ScrollUpAnimation),
+        MouseEventKind::ScrollDown => Some(Message::ScrollDown),
+        MouseEventKind::ScrollUp => Some(Message::ScrollUp),
         _ => None,
     }
 }
@@ -106,9 +102,6 @@ fn handle_msg(
     match msg {
         Message::Quit => {
             model.state = State::Quit;
-        }
-        Message::Sleep { millis } => {
-            thread::sleep(Duration::from_millis(millis));
         }
         Message::SelectNextNode => {
             model.select_next_node();
@@ -129,16 +122,16 @@ fn handle_msg(
             model.toggle_current_fold()?;
         }
         Message::ScrollDown => {
-            model.scroll_down();
+            model.scroll_down_once();
         }
         Message::ScrollUp => {
-            model.scroll_up();
+            model.scroll_up_once();
         }
-        Message::ScrollDownAnimation => {
-            model.queue_scroll_down_animation(5, 10);
+        Message::ScrollDownPage => {
+            model.scroll_down_lines(model.log_list_height);
         }
-        Message::ScrollUpAnimation => {
-            model.queue_scroll_up_animation(5, 10);
+        Message::ScrollUpPage => {
+            model.scroll_up_lines(model.log_list_height);
         }
         Message::Refresh => {
             model.sync()?;
