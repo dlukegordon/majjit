@@ -4,7 +4,7 @@ use crate::{
 };
 
 use anyhow::Result;
-use ratatui::{Terminal, backend::Backend, text::Text, widgets::ListState};
+use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum State {
@@ -22,7 +22,7 @@ pub struct Model {
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
     pub log_list_tree_positions: Vec<TreePosition>,
-    pub log_list_height: usize,
+    pub log_list_layout: Rect,
 }
 
 impl Model {
@@ -33,13 +33,17 @@ impl Model {
             log_list: Vec::new(),
             log_list_state: ListState::default(),
             log_list_tree_positions: Vec::new(),
-            log_list_height: 0,
+            log_list_layout: Rect::ZERO,
             repository,
             revset,
         };
         model.sync()?;
 
         Ok(model)
+    }
+
+    pub fn quit(&mut self) {
+        self.state = State::Quit;
     }
 
     fn reset_log_list_state(&mut self) {
@@ -209,12 +213,12 @@ impl Model {
 
         // To properly count multi line nodes, we must start scrolling from the top of the window
         self.log_select(self.log_offset());
-        let mut amount_scrolled = 0;
+        let mut lines_scrolled = 0;
 
         loop {
             let lines_in_node = self.log_list[self.log_selected()].lines.len();
-            amount_scrolled += lines_in_node;
-            if amount_scrolled > num_lines {
+            lines_scrolled += lines_in_node;
+            if lines_scrolled > num_lines {
                 break;
             }
             // If this scroll would put us past the end of the list, then revert just select the
@@ -244,6 +248,34 @@ impl Model {
 
     pub fn scroll_up_lines(&mut self, num_lines: usize) {
         self.scroll_lines(num_lines, true);
+    }
+
+    pub fn handle_mouse_click(&mut self, row: u16, column: u16) {
+        let Rect {
+            x,
+            y,
+            width,
+            height,
+        } = self.log_list_layout;
+
+        // Check if inside log list
+        if row < y || row >= y + height || column < x || column >= x + width {
+            return;
+        }
+
+        // Find the node associated with the line
+        let target_line = row as usize - y as usize;
+        let mut lines_scrolled = 0;
+        let mut current_node = self.log_offset();
+        loop {
+            self.log_select(current_node);
+            let lines_in_node = self.log_list[self.log_selected()].lines.len();
+            lines_scrolled += lines_in_node;
+            if lines_scrolled > target_line || current_node == self.log_list.len() - 1 {
+                break;
+            }
+            current_node += 1;
+        }
     }
 
     pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {

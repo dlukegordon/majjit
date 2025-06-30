@@ -1,4 +1,4 @@
-use crate::model::{Model, State};
+use crate::model::Model;
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
@@ -20,6 +20,8 @@ pub enum Message {
     ScrollUp,
     ScrollDownPage,
     ScrollUpPage,
+    LeftMouseClick { row: u16, column: u16 },
+    RightMouseClick { row: u16, column: u16 },
     Refresh,
     Describe,
     New,
@@ -90,6 +92,14 @@ fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
     match mouse.kind {
         MouseEventKind::ScrollDown => Some(Message::ScrollDown),
         MouseEventKind::ScrollUp => Some(Message::ScrollUp),
+        MouseEventKind::Down(event::MouseButton::Left) => Some(Message::LeftMouseClick {
+            row: mouse.row,
+            column: mouse.column,
+        }),
+        MouseEventKind::Down(event::MouseButton::Right) => Some(Message::RightMouseClick {
+            row: mouse.row,
+            column: mouse.column,
+        }),
         _ => None,
     }
 }
@@ -100,69 +110,32 @@ fn handle_msg(
     msg: Message,
 ) -> Result<Option<Message>> {
     match msg {
-        Message::Quit => {
-            model.state = State::Quit;
-        }
-        Message::SelectNextNode => {
-            model.select_next_node();
-        }
-        Message::SelectPrevNode => {
-            model.select_prev_node();
-        }
-        Message::SelectParentNode => {
-            model.select_parent_node()?;
-        }
-        Message::SelectNextSiblingNode => {
-            model.select_current_next_sibling_node()?;
-        }
-        Message::SelectPrevSiblingNode => {
-            model.select_current_prev_sibling_node()?;
-        }
-        Message::ToggleLogListFold => {
+        Message::Quit => model.quit(),
+        Message::SelectNextNode => model.select_next_node(),
+        Message::SelectPrevNode => model.select_prev_node(),
+        Message::SelectParentNode => model.select_parent_node()?,
+        Message::SelectNextSiblingNode => model.select_current_next_sibling_node()?,
+        Message::SelectPrevSiblingNode => model.select_current_prev_sibling_node()?,
+        Message::ToggleLogListFold => model.toggle_current_fold()?,
+        Message::ScrollDown => model.scroll_down_once(),
+        Message::ScrollUp => model.scroll_up_once(),
+        Message::ScrollDownPage => model.scroll_down_lines(model.log_list_layout.height as usize),
+        Message::ScrollUpPage => model.scroll_up_lines(model.log_list_layout.height as usize),
+        Message::LeftMouseClick { row, column } => model.handle_mouse_click(row, column),
+        Message::RightMouseClick { row, column } => {
+            model.handle_mouse_click(row, column);
             model.toggle_current_fold()?;
         }
-        Message::ScrollDown => {
-            model.scroll_down_once();
-        }
-        Message::ScrollUp => {
-            model.scroll_up_once();
-        }
-        Message::ScrollDownPage => {
-            model.scroll_down_lines(model.log_list_height);
-        }
-        Message::ScrollUpPage => {
-            model.scroll_up_lines(model.log_list_height);
-        }
-        Message::Refresh => {
-            model.sync()?;
-        }
-        Message::Describe => {
-            model.jj_describe(term)?;
-        }
-        Message::New => {
-            model.jj_new()?;
-        }
-        Message::Abandon => {
-            model.jj_abandon()?;
-        }
-        Message::Undo => {
-            model.jj_undo()?;
-        }
-        Message::Commit => {
-            model.jj_commit(term)?;
-        }
-        Message::Squash => {
-            model.jj_squash(term)?;
-        }
-        Message::Edit => {
-            model.jj_edit()?;
-        }
-        Message::Fetch => {
-            model.jj_fetch()?;
-        }
-        Message::Push => {
-            model.jj_push()?;
-        }
+        Message::Refresh => model.sync()?,
+        Message::Describe => model.jj_describe(term)?,
+        Message::New => model.jj_new()?,
+        Message::Abandon => model.jj_abandon()?,
+        Message::Undo => model.jj_undo()?,
+        Message::Commit => model.jj_commit(term)?,
+        Message::Squash => model.jj_squash(term)?,
+        Message::Edit => model.jj_edit()?,
+        Message::Fetch => model.jj_fetch()?,
+        Message::Push => model.jj_push()?,
     };
 
     Ok(None)
