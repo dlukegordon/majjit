@@ -153,7 +153,7 @@ pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<()>
 }
 
 pub fn squash(repository: &str, change_id: &str, term: &mut Terminal<impl Backend>) -> Result<()> {
-    let args = ["squash", "-r", change_id];
+    let args = ["squash", "--revision", change_id];
     run_jj_command_interactive(repository, &args, term)?;
     Ok(())
 }
@@ -172,6 +172,12 @@ pub fn fetch(repository: &str) -> Result<()> {
 
 pub fn push(repository: &str) -> Result<()> {
     let args = ["git", "push"];
+    run_jj_command(repository, &args)?;
+    Ok(())
+}
+
+pub fn bookmark_set_master(repository: &str, change_id: &str) -> Result<()> {
+    let args = ["bookmark", "set", "master", "--revision", change_id];
     run_jj_command(repository, &args)?;
     Ok(())
 }

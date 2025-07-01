@@ -12,6 +12,7 @@ pub enum Message {
     Quit,
     SelectNextNode,
     SelectPrevNode,
+    SelectCurrentWorkingCopy,
     SelectParentNode,
     SelectNextSiblingNode,
     SelectPrevSiblingNode,
@@ -32,6 +33,7 @@ pub enum Message {
     Edit,
     Fetch,
     Push,
+    BookmarkSetMaster,
 }
 
 pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Result<()> {
@@ -70,6 +72,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::PageUp => Some(Message::ScrollUpPage),
         KeyCode::Left | KeyCode::Char('h') => Some(Message::SelectPrevSiblingNode),
         KeyCode::Right | KeyCode::Char('l') => Some(Message::SelectNextSiblingNode),
+        KeyCode::Char('@') => Some(Message::SelectCurrentWorkingCopy),
         KeyCode::Char('K') => Some(Message::SelectParentNode),
         KeyCode::Tab => Some(Message::ToggleLogListFold),
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -84,6 +87,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Char('e') => Some(Message::Edit),
         KeyCode::Char('f') => Some(Message::Fetch),
         KeyCode::Char('p') => Some(Message::Push),
+        KeyCode::Char('m') => Some(Message::BookmarkSetMaster),
         _ => None,
     }
 }
@@ -113,6 +117,7 @@ fn handle_msg(
         Message::Quit => model.quit(),
         Message::SelectNextNode => model.select_next_node(),
         Message::SelectPrevNode => model.select_prev_node(),
+        Message::SelectCurrentWorkingCopy => model.select_current_working_copy(),
         Message::SelectParentNode => model.select_parent_node()?,
         Message::SelectNextSiblingNode => model.select_current_next_sibling_node()?,
         Message::SelectPrevSiblingNode => model.select_current_prev_sibling_node()?,
@@ -136,6 +141,7 @@ fn handle_msg(
         Message::Edit => model.jj_edit()?,
         Message::Fetch => model.jj_fetch()?,
         Message::Push => model.jj_push()?,
+        Message::BookmarkSetMaster => model.jj_bookmark_set_master()?,
     };
 
     Ok(None)

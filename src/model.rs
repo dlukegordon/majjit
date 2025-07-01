@@ -52,7 +52,7 @@ impl Model {
         self.state = State::Quit;
     }
 
-    fn reset_log_list_state(&mut self) {
+    fn reset_log_list_selection(&mut self) {
         let list_idx = match self.jj_log.get_current_commit() {
             None => 0,
             Some(commit) => commit.flat_log_idx,
@@ -63,7 +63,7 @@ impl Model {
     pub fn sync(&mut self) -> Result<()> {
         self.jj_log.load_log_tree(&self.repository, &self.revset)?;
         self.sync_log_list()?;
-        self.reset_log_list_state();
+        self.reset_log_list_selection();
         Ok(())
     }
 
@@ -105,6 +105,12 @@ impl Model {
     pub fn select_prev_node(&mut self) {
         if self.log_list_state.selected().unwrap() > 0 {
             self.log_list_state.select_previous();
+        }
+    }
+
+    pub fn select_current_working_copy(&mut self) {
+        if let Some(commit) = self.jj_log.get_current_commit() {
+            self.log_select(commit.flat_log_idx);
         }
     }
 
@@ -367,6 +373,15 @@ impl Model {
 
     pub fn jj_push(&mut self) -> Result<()> {
         jj_commands::push(&self.repository)?;
+        self.sync()?;
+        Ok(())
+    }
+
+    pub fn jj_bookmark_set_master(&mut self) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id()? else {
+            return Ok(());
+        };
+        jj_commands::bookmark_set_master(&self.repository, change_id)?;
         self.sync()?;
         Ok(())
     }
