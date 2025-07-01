@@ -119,8 +119,8 @@ fn handle_msg(
         Message::ToggleLogListFold => model.toggle_current_fold()?,
         Message::ScrollDown => model.scroll_down_once(),
         Message::ScrollUp => model.scroll_up_once(),
-        Message::ScrollDownPage => model.scroll_down_lines(model.log_list_layout.height as usize),
-        Message::ScrollUpPage => model.scroll_up_lines(model.log_list_layout.height as usize),
+        Message::ScrollDownPage => model.scroll_down_page(),
+        Message::ScrollUpPage => model.scroll_up_page(),
         Message::LeftMouseClick { row, column } => model.handle_mouse_click(row, column),
         Message::RightMouseClick { row, column } => {
             model.handle_mouse_click(row, column);

@@ -15,14 +15,20 @@ pub enum State {
 
 #[derive(Debug)]
 pub struct Model {
-    pub repository: String,
+    repository: String,
     pub revset: String,
     pub state: State,
-    pub jj_log: JjLog,
+    jj_log: JjLog,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
-    pub log_list_tree_positions: Vec<TreePosition>,
+    log_list_tree_positions: Vec<TreePosition>,
     pub log_list_layout: Rect,
+}
+
+#[derive(Debug)]
+enum ScrollDirection {
+    Up,
+    Down,
 }
 
 impl Model {
@@ -193,61 +199,53 @@ impl Model {
     }
 
     pub fn scroll_down_once(&mut self) {
-        self.select_next_node();
+        if self.log_selected() == self.log_offset() {
+            self.select_next_node();
+        }
         *self.log_list_state.offset_mut() = self.log_offset() + 1;
     }
 
     pub fn scroll_up_once(&mut self) {
-        self.select_prev_node();
+        let last_node_visible = self.line_dist_to_dest_node(
+            self.log_list_layout.height as usize - 1,
+            self.log_offset(),
+            &ScrollDirection::Down,
+        );
+        if self.log_selected() == last_node_visible {
+            self.select_prev_node();
+        }
         *self.log_list_state.offset_mut() = self.log_offset().saturating_sub(1);
     }
 
-    pub fn scroll_lines(&mut self, num_lines: usize, up: bool) {
-        let original_log_selected = self.log_selected();
-        let lines_from_offset = self.log_selected() - self.log_offset();
-        // If we're at the top of the list, just select the first line
-        if up && self.log_offset() == 0 && lines_from_offset <= num_lines {
-            self.log_select(0);
-            return;
-        }
-
-        // To properly count multi line nodes, we must start scrolling from the top of the window
-        self.log_select(self.log_offset());
-        let mut lines_scrolled = 0;
-
-        loop {
-            let lines_in_node = self.log_list[self.log_selected()].lines.len();
-            lines_scrolled += lines_in_node;
-            if lines_scrolled > num_lines {
-                break;
-            }
-            // If this scroll would put us past the end of the list, then revert just select the
-            // last line and don't scroll. We must still traverse and then revert so we can
-            // properly count multi line nodes
-            if !up && self.log_offset() >= self.log_list.len() - 1 {
-                self.log_select(self.log_list.len() - 1);
-                *self.log_list_state.offset_mut() = original_log_selected - lines_from_offset;
-                return;
-            }
-
-            if up {
-                self.scroll_up_once();
-            } else {
-                self.scroll_down_once();
-            }
-        }
-
-        // Restore the cursor position
-        let new_offset = self.log_offset() + lines_from_offset;
-        self.log_select(new_offset);
+    pub fn scroll_down_page(&mut self) {
+        self.scroll_lines(self.log_list_layout.height as usize, &ScrollDirection::Down);
     }
 
-    pub fn scroll_down_lines(&mut self, num_lines: usize) {
-        self.scroll_lines(num_lines, false);
+    pub fn scroll_up_page(&mut self) {
+        self.scroll_lines(self.log_list_layout.height as usize, &ScrollDirection::Up);
     }
 
-    pub fn scroll_up_lines(&mut self, num_lines: usize) {
-        self.scroll_lines(num_lines, true);
+    fn scroll_lines(&mut self, num_lines: usize, direction: &ScrollDirection) {
+        let selected_node_dist_from_offset = self.log_selected() - self.log_offset();
+        let mut target_offset =
+            self.line_dist_to_dest_node(num_lines, self.log_offset(), direction);
+        let mut target_node = target_offset + selected_node_dist_from_offset;
+        match direction {
+            ScrollDirection::Down => {
+                if target_offset == self.log_list.len() - 1 {
+                    target_node = target_offset;
+                    target_offset = self.log_offset();
+                }
+            }
+            ScrollDirection::Up => {
+                // If we're already at the top of the page, then move selection to the top as well
+                if target_offset == 0 && target_offset == self.log_offset() {
+                    target_node = 0;
+                }
+            }
+        }
+        self.log_select(target_node);
+        *self.log_list_state.offset_mut() = target_offset;
     }
 
     pub fn handle_mouse_click(&mut self, row: u16, column: u16) {
@@ -263,19 +261,44 @@ impl Model {
             return;
         }
 
-        // Find the node associated with the line
-        let target_line = row as usize - y as usize;
-        let mut lines_scrolled = 0;
-        let mut current_node = self.log_offset();
+        let target_node = self.line_dist_to_dest_node(
+            row as usize - y as usize,
+            self.log_offset(),
+            &ScrollDirection::Down,
+        );
+        self.log_select(target_node);
+    }
+
+    // Since some nodes contain multiple lines, we need a way to determine the destination node
+    // which is n lines away from the starting node.
+    fn line_dist_to_dest_node(
+        &self,
+        line_dist: usize,
+        starting_node: usize,
+        direction: &ScrollDirection,
+    ) -> usize {
+        let mut current_node = starting_node;
+        let mut lines_traversed = 0;
         loop {
-            self.log_select(current_node);
-            let lines_in_node = self.log_list[self.log_selected()].lines.len();
-            lines_scrolled += lines_in_node;
-            if lines_scrolled > target_line || current_node == self.log_list.len() - 1 {
+            let lines_in_node = self.log_list[current_node].lines.len();
+            lines_traversed += lines_in_node;
+
+            // Stop if we've found the dest node or have no further to traverse
+            if match direction {
+                ScrollDirection::Down => current_node == self.log_list.len() - 1,
+                ScrollDirection::Up => current_node == 0,
+            } || lines_traversed > line_dist
+            {
                 break;
             }
-            current_node += 1;
+
+            match direction {
+                ScrollDirection::Down => current_node += 1,
+                ScrollDirection::Up => current_node -= 1,
+            }
         }
+
+        current_node
     }
 
     pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
