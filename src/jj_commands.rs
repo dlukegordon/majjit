@@ -50,7 +50,7 @@ fn get_jj_command(repository: &str) -> Command {
                           if(current_working_copy, "@"),
                           if(root, "┴"),
                           if(immutable, "●"),
-                          if(conflict, "×"),
+                          if(conflict, "⊗"),
                           "○",
                         )
                       )

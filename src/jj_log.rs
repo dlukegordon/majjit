@@ -147,7 +147,7 @@ impl CommitOrText {
     fn load_all(repository: &str, revset: &str) -> Result<Vec<Self>> {
         let output = jj_commands::log(repository, revset)?;
         let mut lines = output.trim().lines();
-        let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8})$")?;
+        let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8}).*$")?;
 
         let mut commits_or_texts = Vec::new();
         loop {
@@ -204,6 +204,7 @@ pub struct Commit {
     pub change_id: String,
     _commit_id: String,
     pub current_working_copy: bool,
+    has_conflict: bool,
     symbol: String,
     line1_graph_chars: String,
     line2_graph_chars: String,
@@ -219,12 +220,13 @@ pub struct Commit {
 impl Commit {
     fn new(repository: String, pretty_string: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
-        let re_fields = Regex::new(r"^([ │]*)(.)\s+([k-z]{8})\s+.*\s+([a-f0-9]{8})\n([ │├─╯]*)")?;
+        let re_fields =
+            Regex::new(r"^([ │]*)(.)\s+([k-z]{8})\s+.*\s+([a-f0-9]{8})\s*(\S*)\s*\n([ │├─╯]*)")?;
         let re_lines = Regex::new(r"^[ │]*\S+\s+(.*)\n[ │├─╯]*(.*)")?;
 
         let captures = re_fields
             .captures(&clean_string)
-            .ok_or_else(|| anyhow!("Cannot parse commit fields: {:?}", pretty_string))?;
+            .ok_or_else(|| anyhow!("Cannot parse commit fields: {:?}", clean_string))?;
         let line1_graph_chars: String = captures
             .get(1)
             .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
@@ -245,8 +247,13 @@ impl Commit {
             .ok_or_else(|| anyhow!("Cannot parse commit id"))?
             .as_str()
             .into();
-        let line2_graph_chars: String = captures
+        let conflict_status: String = captures
             .get(5)
+            .ok_or_else(|| anyhow!("Cannot parse conflict status"))?
+            .as_str()
+            .into();
+        let line2_graph_chars: String = captures
+            .get(6)
             .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
             .as_str()
             .into();
@@ -261,6 +268,7 @@ impl Commit {
         graph_indent.pop(); // Even out with our spacing
 
         let current_working_copy = symbol == "@";
+        let has_conflict = conflict_status == "conflict";
 
         let captures = re_lines
             .captures(&pretty_string)
@@ -281,6 +289,7 @@ impl Commit {
             change_id,
             _commit_id: commit_id,
             current_working_copy,
+            has_conflict,
             symbol,
             line1_graph_chars,
             line2_graph_chars,
@@ -306,7 +315,14 @@ impl LogTreeNode for Commit {
     fn render(&self) -> Result<Text<'static>> {
         let mut line1 = Line::from(vec![
             Span::raw(self.line1_graph_chars.clone()),
-            Span::raw(self.symbol.clone()),
+            Span::styled(
+                self.symbol.clone(),
+                if self.has_conflict {
+                    Style::default().fg(Color::Red)
+                } else {
+                    Style::default()
+                },
+            ),
             Span::raw(" "),
             fold_symbol(self.unfolded),
             Span::raw(" "),
