@@ -1,8 +1,9 @@
 use crate::{
-    jj_commands,
+    jj_commands::{self, JjCommandError},
     jj_log::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
 };
 
+use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
 
@@ -26,6 +27,7 @@ pub struct Model {
     log_list_tree_positions: Vec<TreePosition>,
     pub log_list_layout: Rect,
     pub log_list_scroll_padding: usize,
+    pub info_list: Option<Vec<Text<'static>>>,
 }
 
 #[derive(Debug)]
@@ -44,6 +46,7 @@ impl Model {
             log_list_tree_positions: Vec::new(),
             log_list_layout: Rect::ZERO,
             log_list_scroll_padding: LOG_LIST_SCROLL_PADDING,
+            info_list: None,
             repository,
             revset,
         };
@@ -216,6 +219,10 @@ impl Model {
         Ok(())
     }
 
+    pub fn clear(&mut self) {
+        self.info_list = None;
+    }
+
     pub fn scroll_down_once(&mut self) {
         if self.log_selected() <= self.log_offset() + self.log_list_scroll_padding {
             self.select_next_node();
@@ -336,24 +343,21 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::new(&self.repository, change_id)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::new(&self.repository, change_id);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_abandon(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::abandon(&self.repository, change_id)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::abandon(&self.repository, change_id);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_undo(&mut self) -> Result<()> {
-        jj_commands::undo(&self.repository)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::undo(&self.repository);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_commit(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
@@ -376,29 +380,40 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::edit(&self.repository, change_id)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::edit(&self.repository, change_id);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_fetch(&mut self) -> Result<()> {
-        jj_commands::fetch(&self.repository)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::fetch(&self.repository);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_push(&mut self) -> Result<()> {
-        jj_commands::push(&self.repository)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::push(&self.repository);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_bookmark_set_master(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::bookmark_set_master(&self.repository, change_id)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::bookmark_set_master(&self.repository, change_id);
+        self.handle_jj_command_result(result)
+    }
+
+    pub fn handle_jj_command_result(&mut self, result: Result<(), JjCommandError>) -> Result<()> {
+        match result {
+            Ok(_) => self.sync(),
+            Err(err) => {
+                self.info_list = Some(
+                    err.stderr
+                        .lines()
+                        .map(|line| line.into_text().unwrap())
+                        .collect(),
+                );
+                Ok(())
+            }
+        }
     }
 }

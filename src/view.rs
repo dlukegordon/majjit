@@ -7,13 +7,21 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{List, Paragraph},
+    widgets::{Block, BorderType, Borders, List, Paragraph},
 };
 
 pub fn view(model: &mut Model, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(0),
+            if model.info_list.is_some() {
+                Constraint::Ratio(1, 4)
+            } else {
+                Constraint::Length(0)
+            },
+        ])
         .split(frame.area());
 
     let header = Paragraph::new(Line::from(vec![
@@ -27,6 +35,15 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
 
     frame.render_widget(header, layout[0]);
     frame.render_stateful_widget(log_list, layout[1], &mut model.log_list_state);
-
     model.log_list_layout = layout[1];
+
+    if let Some(info_list) = &model.info_list {
+        let info_list = List::new(info_list.clone()).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Blue)),
+        );
+        frame.render_widget(info_list, layout[2]);
+    }
 }

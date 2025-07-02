@@ -95,10 +95,7 @@ impl JjLog {
         if tree_pos.len() <= FILE_DIFF_IDX {
             return None;
         }
-        let commit = match self.get_tree_commit(tree_pos) {
-            None => return None,
-            Some(commit) => commit,
-        };
+        let commit = self.get_tree_commit(tree_pos)?;
         Some(&commit.file_diffs[tree_pos[FILE_DIFF_IDX]])
     }
 
@@ -148,6 +145,7 @@ pub fn get_parent_tree_position(tree_pos: &TreePosition) -> Option<TreePosition>
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum CommitOrText {
     Commit(Commit),
@@ -167,15 +165,12 @@ impl CommitOrText {
                 Some(line) => line,
             };
 
-            if let None = re.captures(&strip_ansi(&line1)) {
+            if re.captures(&strip_ansi(line1)).is_none() {
                 commits_or_texts.push(Self::InfoText(InfoText::new(line1.to_string())));
                 continue;
             };
 
-            let line2 = match lines.next() {
-                None => "",
-                Some(line2) => line2,
-            };
+            let line2 = lines.next().unwrap_or_default();
             commits_or_texts.push(Self::Commit(Commit::new(
                 repository.to_string(),
                 format!("{line1}\n{line2}"),
@@ -340,7 +335,7 @@ impl LogTreeNode for Commit {
         ]);
         line1.extend(self.pretty_line1.into_text()?.lines[0].spans.clone());
         let mut lines = vec![line1];
-        if self.pretty_line2 != "" {
+        if !self.pretty_line2.is_empty() {
             let mut line2 = Line::from(vec![
                 Span::raw(self.line2_graph_chars.clone()),
                 Span::raw(" "),
@@ -832,7 +827,7 @@ impl LogTreeNode for DiffHunkLine {
 
         for span in self.pretty_string.into_text()?.lines[0].spans.clone() {
             let span = if clean_string.starts_with("+") || clean_string.starts_with("-") {
-                let style = span.style.clone().bold();
+                let style = span.style.bold();
                 span.style(style)
             } else {
                 span
@@ -870,7 +865,7 @@ impl LogTreeNode for DiffHunkLine {
 
 fn strip_ansi(pretty_str: &str) -> String {
     let ansi_regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-    ansi_regex.replace_all(&pretty_str, "").to_string()
+    ansi_regex.replace_all(pretty_str, "").to_string()
 }
 
 fn fold_symbol(unfolded: bool) -> Span<'static> {

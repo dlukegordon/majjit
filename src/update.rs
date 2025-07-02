@@ -17,6 +17,7 @@ pub enum Message {
     SelectNextSiblingNode,
     SelectPrevSiblingNode,
     ToggleLogListFold,
+    Clear,
     ScrollDown,
     ScrollUp,
     ScrollDownPage,
@@ -75,6 +76,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Char('@') => Some(Message::SelectCurrentWorkingCopy),
         KeyCode::Char('K') => Some(Message::SelectParentNode),
         KeyCode::Tab => Some(Message::ToggleLogListFold),
+        KeyCode::Esc => Some(Message::Clear),
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(Message::Refresh)
         }
@@ -122,6 +124,7 @@ fn handle_msg(
         Message::SelectNextSiblingNode => model.select_current_next_sibling_node()?,
         Message::SelectPrevSiblingNode => model.select_current_prev_sibling_node()?,
         Message::ToggleLogListFold => model.toggle_current_fold()?,
+        Message::Clear => model.clear(),
         Message::ScrollDown => model.scroll_down_once(),
         Message::ScrollUp => model.scroll_up_once(),
         Message::ScrollDownPage => model.scroll_down_page(),
