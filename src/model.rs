@@ -6,6 +6,8 @@ use crate::{
 use anyhow::Result;
 use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
 
+const LOG_LIST_SCROLL_PADDING: usize = 0;
+
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum State {
     #[default]
@@ -23,6 +25,7 @@ pub struct Model {
     pub log_list_state: ListState,
     log_list_tree_positions: Vec<TreePosition>,
     pub log_list_layout: Rect,
+    pub log_list_scroll_padding: usize,
 }
 
 #[derive(Debug)]
@@ -40,6 +43,7 @@ impl Model {
             log_list_state: ListState::default(),
             log_list_tree_positions: Vec::new(),
             log_list_layout: Rect::ZERO,
+            log_list_scroll_padding: LOG_LIST_SCROLL_PADDING,
             repository,
             revset,
         };
@@ -205,7 +209,7 @@ impl Model {
     }
 
     pub fn scroll_down_once(&mut self) {
-        if self.log_selected() == self.log_offset() {
+        if self.log_selected() <= self.log_offset() + self.log_list_scroll_padding {
             self.select_next_node();
         }
         *self.log_list_state.offset_mut() = self.log_offset() + 1;
@@ -220,7 +224,7 @@ impl Model {
             self.log_offset(),
             &ScrollDirection::Down,
         );
-        if self.log_selected() >= last_node_visible - 1 {
+        if self.log_selected() >= last_node_visible - 1 - self.log_list_scroll_padding {
             self.select_prev_node();
         }
         *self.log_list_state.offset_mut() = self.log_offset().saturating_sub(1);
