@@ -212,12 +212,15 @@ impl Model {
     }
 
     pub fn scroll_up_once(&mut self) {
+        if self.log_offset() == 0 {
+            return;
+        }
         let last_node_visible = self.line_dist_to_dest_node(
             self.log_list_layout.height as usize - 1,
             self.log_offset(),
             &ScrollDirection::Down,
         );
-        if self.log_selected() == last_node_visible {
+        if self.log_selected() >= last_node_visible - 1 {
             self.select_prev_node();
         }
         *self.log_list_state.offset_mut() = self.log_offset().saturating_sub(1);
