@@ -518,7 +518,7 @@ impl LogTreeNode for FileDiff {
             Span::raw(" "),
             Span::styled(
                 format!("{}  {}", self.status, self.description),
-                Style::default().fg(Color::Magenta),
+                Style::default().fg(Color::Blue),
             ),
         ]);
         Ok(Text::from(line))
@@ -630,17 +630,12 @@ impl DiffHunk {
     fn new(
         pretty_string: String,
         graph_indent: String,
-        lines: Vec<String>,
         old_start: u32,
         old_count: u32,
         new_start: u32,
         new_count: u32,
     ) -> Self {
         let clean_string = strip_ansi(&pretty_string);
-        let diff_hunk_lines = lines
-            .into_iter()
-            .map(|line| DiffHunkLine::new(line, graph_indent.clone()))
-            .collect();
         Self {
             clean_string,
             graph_indent,
@@ -649,7 +644,7 @@ impl DiffHunk {
             _old_count: old_count,
             _new_start: new_start,
             _new_count: new_count,
-            diff_hunk_lines,
+            diff_hunk_lines: Vec::new(),
             flat_log_idx: 0,
         }
     }
@@ -701,7 +696,6 @@ impl DiffHunk {
                     maybe_diff_hunk = Some(Self::new(
                         line.to_string(),
                         graph_indent.to_string(),
-                        Vec::new(),
                         old_start,
                         old_count,
                         new_start,
@@ -720,7 +714,12 @@ impl DiffHunk {
             }
         }
 
-        if let Some(diff_hunk) = maybe_diff_hunk.take() {
+        if let Some(mut diff_hunk) = maybe_diff_hunk.take() {
+            // Visual divider between hunk diff and next item in log list
+            diff_hunk.diff_hunk_lines.push(DiffHunkLine::new(
+                "\x1b[35m~\x1b[0m".to_string(),
+                graph_indent.to_string(),
+            ));
             diff_hunks.push(diff_hunk)
         };
 
@@ -730,16 +729,15 @@ impl DiffHunk {
 
 impl LogTreeNode for DiffHunk {
     fn render(&self) -> Result<Text<'static>> {
-        let mut line = Line::from(vec![
+        let line = Line::from(vec![
+            Span::raw(self.graph_indent.clone()),
+            fold_symbol(self.unfolded),
+            Span::raw(" "),
             Span::styled(
-                self.graph_indent.clone(),
-                Style::default().bg(Color::Reset).fg(Color::Reset),
+                self.clean_string.clone(),
+                Style::default().fg(Color::Magenta),
             ),
-            fold_symbol(self.unfolded).patch_style(Style::default().bg(Color::Reset)),
-            Span::styled(" ", Style::default().bg(Color::Reset).fg(Color::Reset)),
-            Span::raw(self.clean_string.clone()),
         ]);
-        line.style = Style::default().bg(Color::Magenta).fg(Color::Black);
         Ok(Text::from(line))
     }
 
