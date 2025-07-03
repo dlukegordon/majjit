@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::model::Model;
 
 use ratatui::{
@@ -20,7 +22,7 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
     ]));
 
     let log_list = List::new(model.log_list.clone())
-        .highlight_style(Style::new().bold().bg(Color::Black))
+        .highlight_style(Style::new().bold().bg(Color::from_str("#282A36").unwrap()))
         .scroll_padding(model.log_list_scroll_padding);
 
     frame.render_widget(header, layout[0]);
