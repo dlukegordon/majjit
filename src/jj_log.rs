@@ -545,7 +545,7 @@ impl LogTreeNode for FileDiff {
             Span::raw(" "),
             Span::styled(
                 format!("{}  {}", self.status, self.description),
-                Style::default().fg(Color::Blue),
+                Style::default().fg(Color::LightBlue),
             ),
         ]);
         Ok(Text::from(line))
