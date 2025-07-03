@@ -1,5 +1,7 @@
 use clap::Parser;
 
+const DEFAULT_REVSET: &str = "root() | remote_bookmarks() | ancestors(immutable_heads().., 7)";
+
 #[derive(Parser, Debug)]
 #[command(version, about = "Majjit: Magit for jj!")]
 pub struct Args {
@@ -8,6 +10,6 @@ pub struct Args {
     pub repository: String,
 
     /// Which revisions to show
-    #[arg(short = 'r', long, value_name = "REVSETS", default_value = "all()")]
+    #[arg(short = 'r', long, value_name = "REVSETS", default_value = DEFAULT_REVSET)]
     pub revisions: String,
 }
