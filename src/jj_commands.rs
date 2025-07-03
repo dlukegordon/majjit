@@ -152,8 +152,16 @@ pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<()>
     Ok(())
 }
 
-pub fn squash(repository: &str, change_id: &str, term: &mut Terminal<impl Backend>) -> Result<()> {
-    let args = ["squash", "--revision", change_id];
+pub fn squash(
+    repository: &str,
+    change_id: &str,
+    maybe_file_path: Option<&str>,
+    term: &mut Terminal<impl Backend>,
+) -> Result<()> {
+    let mut args = vec!["squash", "--revision", change_id];
+    if let Some(file_path) = maybe_file_path {
+        args.push(file_path);
+    }
     run_jj_command_interactive(repository, &args, term)?;
     Ok(())
 }

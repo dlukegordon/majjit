@@ -91,6 +91,17 @@ impl JjLog {
         }
     }
 
+    pub fn get_tree_file_diff(&self, tree_pos: &TreePosition) -> Option<&FileDiff> {
+        if tree_pos.len() <= FILE_DIFF_IDX {
+            return None;
+        }
+        let commit = match self.get_tree_commit(tree_pos) {
+            None => return None,
+            Some(commit) => commit,
+        };
+        Some(&commit.file_diffs[tree_pos[FILE_DIFF_IDX]])
+    }
+
     pub fn get_current_commit(&self) -> Option<&Commit> {
         // TODO: cache this instead of looping each time?
         self.log_tree.iter().find_map(|item| match item {
@@ -437,10 +448,10 @@ impl LogTreeNode for InfoText {
 }
 
 #[derive(Debug)]
-struct FileDiff {
+pub struct FileDiff {
     repository: String,
     change_id: String,
-    path: String,
+    pub path: String,
     description: String,
     status: FileDiffStatus,
     graph_indent: String,

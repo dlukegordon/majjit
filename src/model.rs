@@ -92,11 +92,19 @@ impl Model {
         self.log_list_tree_positions[self.log_selected()].clone()
     }
 
-    fn get_selected_change_id(&self) -> Result<Option<&str>> {
+    fn get_selected_change_id(&self) -> Option<&str> {
         let tree_pos = self.get_selected_tree_position();
         match self.jj_log.get_tree_commit(&tree_pos) {
-            None => Ok(None),
-            Some(commit) => Ok(Some(&commit.change_id)),
+            None => None,
+            Some(commit) => Some(&commit.change_id),
+        }
+    }
+
+    fn get_selected_file_path(&self) -> Option<&str> {
+        let tree_pos = self.get_selected_tree_position();
+        match self.jj_log.get_tree_file_diff(&tree_pos) {
+            None => None,
+            Some(file_diff) => Some(&file_diff.path),
         }
     }
 
@@ -315,7 +323,7 @@ impl Model {
     }
 
     pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         jj_commands::describe(&self.repository, change_id, term)?;
@@ -325,7 +333,7 @@ impl Model {
     }
 
     pub fn jj_new(&mut self) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         jj_commands::new(&self.repository, change_id)?;
@@ -334,7 +342,7 @@ impl Model {
     }
 
     pub fn jj_abandon(&mut self) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         jj_commands::abandon(&self.repository, change_id)?;
@@ -355,16 +363,17 @@ impl Model {
     }
 
     pub fn jj_squash(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::squash(&self.repository, change_id, term)?;
+        let maybe_file_path = self.get_selected_file_path();
+        jj_commands::squash(&self.repository, change_id, maybe_file_path, term)?;
         self.sync()?;
         Ok(())
     }
 
     pub fn jj_edit(&mut self) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         jj_commands::edit(&self.repository, change_id)?;
@@ -385,7 +394,7 @@ impl Model {
     }
 
     pub fn jj_bookmark_set_master(&mut self) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id()? else {
+        let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         jj_commands::bookmark_set_master(&self.repository, change_id)?;
