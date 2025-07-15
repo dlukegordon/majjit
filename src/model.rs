@@ -333,10 +333,8 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        jj_commands::describe(&self.repository, change_id, term)?;
-
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::describe(&self.repository, change_id, term);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_new(&mut self) -> Result<()> {
@@ -361,9 +359,8 @@ impl Model {
     }
 
     pub fn jj_commit(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        jj_commands::commit(&self.repository, term)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::commit(&self.repository, term);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_squash(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
@@ -371,9 +368,8 @@ impl Model {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
-        jj_commands::squash(&self.repository, change_id, maybe_file_path, term)?;
-        self.sync()?;
-        Ok(())
+        let result = jj_commands::squash(&self.repository, change_id, maybe_file_path, term);
+        self.handle_jj_command_result(result)
     }
 
     pub fn jj_edit(&mut self) -> Result<()> {
@@ -405,15 +401,22 @@ impl Model {
     pub fn handle_jj_command_result(&mut self, result: Result<(), JjCommandError>) -> Result<()> {
         match result {
             Ok(_) => self.sync(),
-            Err(err) => {
-                self.info_list = Some(
-                    err.stderr
-                        .lines()
-                        .map(|line| line.into_text().unwrap())
-                        .collect(),
-                );
-                Ok(())
-            }
+            Err(err) => match err {
+                JjCommandError::Other { err } => Err(err),
+                JjCommandError::Failed {
+                    command: _,
+                    status: _,
+                    stderr,
+                } => {
+                    self.info_list = Some(
+                        stderr
+                            .lines()
+                            .map(|line| line.into_text().unwrap())
+                            .collect(),
+                    );
+                    Ok(())
+                }
+            },
         }
     }
 }

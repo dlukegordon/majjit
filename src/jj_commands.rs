@@ -1,23 +1,40 @@
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use ratatui::{Terminal, backend::Backend};
-use std::process::{Command, ExitStatus};
+use std::{
+    io::Read,
+    process::{Command, ExitStatus},
+};
 
 use crate::terminal;
 
 #[derive(Debug)]
-pub struct JjCommandError {
-    pub command: String,
-    pub status: ExitStatus,
-    pub stderr: String,
+pub enum JjCommandError {
+    Failed {
+        command: String,
+        status: ExitStatus,
+        stderr: String,
+    },
+    Other {
+        err: anyhow::Error,
+    },
 }
 
 impl std::fmt::Display for JjCommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Jj command '{}' failed with {}:\n{}",
-            self.command, self.status, self.stderr
-        )
+        match self {
+            Self::Failed {
+                command,
+                status,
+                stderr,
+            } => {
+                write!(
+                    f,
+                    "Jj command '{}' failed with {}:\n{}",
+                    command, status, stderr
+                )
+            }
+            Self::Other { err } => err.fmt(f),
+        }
     }
 }
 
@@ -26,14 +43,17 @@ impl std::error::Error for JjCommandError {}
 fn run_jj_command(repository: &str, args: &[&str]) -> Result<String, JjCommandError> {
     let mut command = get_jj_command(repository);
     command.args(args);
-    let output = command.output().unwrap();
+    let output = command
+        .output()
+        .map_err(|e| JjCommandError::Other { err: e.into() })?;
 
     if output.status.success() {
-        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stdout = String::from_utf8(output.stdout)
+            .map_err(|e| JjCommandError::Other { err: e.into() })?;
         Ok(stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).into();
-        Err(JjCommandError {
+        Err(JjCommandError::Failed {
             command: format!("{args:?}"),
             status: output.status,
             stderr,
@@ -45,18 +65,37 @@ fn run_jj_command_interactive(
     repository: &str,
     args: &[&str],
     term: &mut Terminal<impl Backend>,
-) -> Result<()> {
+) -> Result<(), JjCommandError> {
     let mut command = get_jj_command(repository);
     command.args(args);
+    command.stderr(std::process::Stdio::piped());
 
-    terminal::relinquish_terminal()?;
-    let status = command.status()?;
-    terminal::takeover_terminal(term)?;
+    terminal::relinquish_terminal().map_err(|e| JjCommandError::Other { err: e })?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| JjCommandError::Other { err: e.into() })?;
+    let status = child
+        .wait()
+        .map_err(|e| JjCommandError::Other { err: e.into() })?;
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .ok_or_else(|| JjCommandError::Other {
+            err: anyhow!("No stderr"),
+        })?
+        .read_to_string(&mut stderr)
+        .map_err(|e| JjCommandError::Other { err: e.into() })?;
+    terminal::takeover_terminal(term).map_err(|e| JjCommandError::Other { err: e })?;
 
     if status.success() {
         Ok(())
     } else {
-        bail!("Jj command '{:?}' failed with status {}", command, status,);
+        Err(JjCommandError::Failed {
+            command: format!("{args:?}"),
+            status,
+            stderr,
+        })
     }
 }
 
@@ -140,10 +179,9 @@ pub fn describe(
     repository: &str,
     change_id: &str,
     terminal: &mut Terminal<impl Backend>,
-) -> Result<()> {
+) -> Result<(), JjCommandError> {
     let args = ["describe", change_id];
-    run_jj_command_interactive(repository, &args, terminal)?;
-    Ok(())
+    run_jj_command_interactive(repository, &args, terminal)
 }
 
 pub fn new(repository: &str, change_id: &str) -> Result<(), JjCommandError> {
@@ -164,7 +202,7 @@ pub fn undo(repository: &str) -> Result<(), JjCommandError> {
     Ok(())
 }
 
-pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<()> {
+pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<(), JjCommandError> {
     let args = ["commit"];
     run_jj_command_interactive(repository, &args, term)?;
     Ok(())
@@ -175,7 +213,7 @@ pub fn squash(
     change_id: &str,
     maybe_file_path: Option<&str>,
     term: &mut Terminal<impl Backend>,
-) -> Result<()> {
+) -> Result<(), JjCommandError> {
     let mut args = vec!["squash", "--revision", change_id];
     if let Some(file_path) = maybe_file_path {
         args.push(file_path);
