@@ -171,7 +171,7 @@ pub fn diff_summary(repository: &str, change_id: &str) -> Result<String, JjComma
 }
 
 pub fn diff_file(repository: &str, change_id: &str, file: &str) -> Result<String, JjCommandError> {
-    let args = ["diff", "--revisions", change_id, "--git", file];
+    let args = ["diff", "--revisions", change_id, file];
     run_jj_command(repository, &args)
 }
 

@@ -637,38 +637,81 @@ impl fmt::Display for FileDiffStatus {
 
 #[derive(Debug)]
 struct DiffHunk {
-    clean_string: String,
     graph_indent: String,
     unfolded: bool,
-    _old_start: u32,
-    _old_count: u32,
-    _new_start: u32,
-    _new_count: u32,
     diff_hunk_lines: Vec<DiffHunkLine>,
+    red_start: u32,
+    red_end: u32,
+    green_start: u32,
+    green_end: u32,
     flat_log_idx: usize,
 }
 
+enum SearchDirection {
+    Down,
+    Up,
+}
+
 impl DiffHunk {
-    fn new(
-        pretty_string: String,
-        graph_indent: String,
-        old_start: u32,
-        old_count: u32,
-        new_start: u32,
-        new_count: u32,
-    ) -> Self {
-        let clean_string = strip_ansi(&pretty_string);
-        Self {
-            clean_string,
+    fn new(graph_indent: String, diff_hunk_lines: Vec<DiffHunkLine>) -> Result<Self> {
+        let (red_start, green_start) =
+            Self::find_line_nums(&diff_hunk_lines, SearchDirection::Down)?;
+        let (red_end, green_end) = Self::find_line_nums(&diff_hunk_lines, SearchDirection::Up)?;
+        Ok(Self {
             graph_indent,
             unfolded: true,
-            _old_start: old_start,
-            _old_count: old_count,
-            _new_start: new_start,
-            _new_count: new_count,
-            diff_hunk_lines: Vec::new(),
+            diff_hunk_lines,
+            red_start,
+            red_end,
+            green_start,
+            green_end,
             flat_log_idx: 0,
+        })
+    }
+
+    fn find_line_nums(
+        diff_hunk_lines: &[DiffHunkLine],
+        direction: SearchDirection,
+    ) -> Result<(u32, u32)> {
+        let line_nums_regex = Regex::new(r"^\s*(\d+)?\s+(\d+)?:").unwrap();
+        let mut red: Option<String> = None;
+        let mut green: Option<String> = None;
+
+        let hunk_lines: Vec<&DiffHunkLine> = match direction {
+            SearchDirection::Down => diff_hunk_lines.iter().collect(),
+            SearchDirection::Up => diff_hunk_lines.iter().rev().collect(),
+        };
+        for line in hunk_lines.iter().map(|l| strip_ansi(&l.pretty_string)) {
+            if line == "~" {
+                continue;
+            }
+            let captures = line_nums_regex
+                .captures(&line)
+                .ok_or_else(|| anyhow!("Cannot parse diff hunk line: {line:?}"))?;
+            if red.is_none() {
+                if let Some(num_match) = captures.get(1) {
+                    if !num_match.is_empty() {
+                        red = Some(num_match.as_str().to_string())
+                    }
+                }
+            }
+            if green.is_none() {
+                if let Some(num_match) = captures.get(2) {
+                    if !num_match.is_empty() {
+                        green = Some(num_match.as_str().to_string())
+                    }
+                }
+            }
+
+            if red.is_some() && green.is_some() {
+                break;
+            }
         }
+
+        if red.is_none() || green.is_none() {
+            bail!("Could not find diff hunk line ranges");
+        }
+        Ok((red.unwrap().parse()?, green.unwrap().parse()?))
     }
 
     fn load_all(
@@ -678,72 +721,45 @@ impl DiffHunk {
         graph_indent: &str,
     ) -> Result<Vec<Self>> {
         let output = jj_commands::diff_file(repository, change_id, file)?;
-        let output_lines: Vec<&str> = output.trim().lines().collect();
+        let output_lines: Vec<&str> = output.trim().lines().skip(1).collect();
 
-        let hunk_regex = Regex::new(r"@@ -(\d+),(\d+) \+(\d+),(\d+) @@")?;
-        let mut diff_hunks = Vec::new();
-        let mut maybe_diff_hunk: Option<Self> = None;
+        let separator_regex = Regex::new(r"\s*\.\.\.\s*")?;
+        let mut diff_hunks: Vec<DiffHunk> = Vec::new();
+        let mut diff_hunk_lines = Vec::new();
+
+        let mut push_diff_hunk = |diff_hunk_lines: Vec<DiffHunkLine>| -> Result<()> {
+            if !diff_hunk_lines.is_empty() {
+                diff_hunks.push(Self::new(graph_indent.to_string(), diff_hunk_lines)?);
+            }
+            Ok(())
+        };
 
         for line in output_lines {
             let clean_line = strip_ansi(line);
-            let maybe_captures = hunk_regex.captures(&clean_line);
 
-            match maybe_captures {
-                Some(captures) => {
-                    let old_start = captures
-                        .get(1)
-                        .ok_or_else(|| anyhow!("Cannot parse hunk old start"))?
-                        .as_str()
-                        .parse()?;
-                    let old_count = captures
-                        .get(2)
-                        .ok_or_else(|| anyhow!("Cannot parse hunk old count"))?
-                        .as_str()
-                        .parse()?;
-                    let new_start = captures
-                        .get(3)
-                        .ok_or_else(|| anyhow!("Cannot parse hunk new start"))?
-                        .as_str()
-                        .parse()?;
-                    let new_count = captures
-                        .get(4)
-                        .ok_or_else(|| anyhow!("Cannot parse hunk new count"))?
-                        .as_str()
-                        .parse()?;
-
-                    if let Some(diff_hunk) = maybe_diff_hunk {
-                        diff_hunks.push(diff_hunk)
-                    };
-
-                    maybe_diff_hunk = Some(Self::new(
-                        line.to_string(),
-                        graph_indent.to_string(),
-                        old_start,
-                        old_count,
-                        new_start,
-                        new_count,
-                    ))
-                }
-                None => {
-                    if let Some(mut diff_hunk) = maybe_diff_hunk {
-                        diff_hunk.diff_hunk_lines.push(DiffHunkLine::new(
-                            line.to_string(),
-                            graph_indent.to_string(),
-                        ));
-                        maybe_diff_hunk = Some(diff_hunk);
-                    }
-                }
+            if separator_regex.is_match(&clean_line) {
+                push_diff_hunk(diff_hunk_lines)?;
+                diff_hunk_lines = Vec::new();
+            } else {
+                diff_hunk_lines.push(DiffHunkLine::new(
+                    line.to_string(),
+                    // line.replacen(' ', "", 1).to_string(),
+                    graph_indent.to_string(),
+                ));
             }
         }
 
-        if let Some(mut diff_hunk) = maybe_diff_hunk.take() {
-            // Visual divider between hunk diff and next item in log list
-            diff_hunk.diff_hunk_lines.push(DiffHunkLine::new(
+        push_diff_hunk(diff_hunk_lines)?;
+
+        // Visual divider between hunk diff and next item in log list
+        diff_hunks
+            .last_mut()
+            .unwrap()
+            .diff_hunk_lines
+            .push(DiffHunkLine::new(
                 "\x1b[35m~\x1b[0m".to_string(),
                 graph_indent.to_string(),
             ));
-            diff_hunks.push(diff_hunk)
-        };
 
         Ok(diff_hunks)
     }
@@ -756,7 +772,13 @@ impl LogTreeNode for DiffHunk {
             fold_symbol(self.unfolded),
             Span::raw(" "),
             Span::styled(
-                self.clean_string.clone(),
+                format!(
+                    "@@ -{},{} +{},{} @@",
+                    self.red_start,
+                    self.red_end - self.red_start + 1,
+                    self.green_start,
+                    self.green_end - self.green_start + 1
+                ),
                 Style::default().fg(Color::Magenta),
             ),
         ]);
