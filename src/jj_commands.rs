@@ -175,6 +175,20 @@ pub fn diff_file(repository: &str, change_id: &str, file: &str) -> Result<String
     run_jj_command(repository, &args)
 }
 
+pub fn show(
+    repository: &str,
+    change_id: &str,
+    maybe_file_path: Option<&str>,
+    term: &mut Terminal<impl Backend>,
+) -> Result<(), JjCommandError> {
+    let args = match maybe_file_path {
+        None => vec!["show", change_id],
+        Some(file_path) => vec!["diff", "--revisions", change_id, file_path],
+    };
+    run_jj_command_interactive(repository, &args, term)?;
+    Ok(())
+}
+
 pub fn describe(
     repository: &str,
     change_id: &str,

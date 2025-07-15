@@ -329,6 +329,15 @@ impl Model {
         current_node
     }
 
+    pub fn jj_show(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id() else {
+            return Ok(());
+        };
+        let maybe_file_path = self.get_selected_file_path();
+        let result = jj_commands::show(&self.repository, change_id, maybe_file_path, term);
+        self.handle_jj_command_result_nosync(result)
+    }
+
     pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
@@ -399,8 +408,29 @@ impl Model {
     }
 
     pub fn handle_jj_command_result(&mut self, result: Result<(), JjCommandError>) -> Result<()> {
+        self._handle_jj_command_result(result, true)
+    }
+
+    pub fn handle_jj_command_result_nosync(
+        &mut self,
+        result: Result<(), JjCommandError>,
+    ) -> Result<()> {
+        self._handle_jj_command_result(result, false)
+    }
+
+    pub fn _handle_jj_command_result(
+        &mut self,
+        result: Result<(), JjCommandError>,
+        sync_on_success: bool,
+    ) -> Result<()> {
         match result {
-            Ok(_) => self.sync(),
+            Ok(_) => {
+                if sync_on_success {
+                    self.sync()
+                } else {
+                    Ok(())
+                }
+            }
             Err(err) => match err {
                 JjCommandError::Other { err } => Err(err),
                 JjCommandError::Failed {

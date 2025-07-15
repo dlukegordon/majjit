@@ -25,6 +25,7 @@ pub enum Message {
     LeftMouseClick { row: u16, column: u16 },
     RightMouseClick { row: u16, column: u16 },
     Refresh,
+    Show,
     Describe,
     New,
     Abandon,
@@ -80,6 +81,7 @@ fn handle_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(Message::Refresh)
         }
+        KeyCode::Enter => Some(Message::Show),
         KeyCode::Char('d') => Some(Message::Describe),
         KeyCode::Char('n') => Some(Message::New),
         KeyCode::Char('a') => Some(Message::Abandon),
@@ -135,6 +137,7 @@ fn handle_msg(
             model.toggle_current_fold()?;
         }
         Message::Refresh => model.sync()?,
+        Message::Show => model.jj_show(term)?,
         Message::Describe => model.jj_describe(term)?,
         Message::New => model.jj_new()?,
         Message::Abandon => model.jj_abandon()?,
