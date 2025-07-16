@@ -25,6 +25,12 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
         .split(frame.area());
 
     let header = Paragraph::new(Line::from(vec![
+        Span::styled("repository: ", Style::default().fg(Color::Blue)),
+        Span::styled(
+            &model.global_args.repository,
+            Style::default().fg(Color::Green),
+        ),
+        Span::raw("   "),
         Span::styled("revset: ", Style::default().fg(Color::Blue)),
         Span::styled(&model.revset, Style::default().fg(Color::Green)),
     ]));

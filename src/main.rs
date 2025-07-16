@@ -17,10 +17,10 @@ use ratatui::{Terminal, backend::Backend};
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    jj_commands::ensure_valid_repo(&args.repository)?;
+    let repository = jj_commands::ensure_valid_repo(&args.repository)?;
     let terminal = terminal::init_terminal()?;
 
-    let model = Model::new(args.repository, args.revisions)?;
+    let model = Model::new(repository, args.revisions)?;
     let res = main_loop(terminal, model);
 
     terminal::relinquish_terminal()?;

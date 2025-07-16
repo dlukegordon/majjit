@@ -99,7 +99,7 @@ fn run_jj_command_interactive(
     }
 }
 
-pub fn ensure_valid_repo(repository: &str) -> Result<()> {
+pub fn ensure_valid_repo(repository: &str) -> Result<String> {
     let output = Command::new("jj")
         .env("JJ_CONFIG", "/dev/null")
         .arg("--repository")
@@ -109,7 +109,10 @@ pub fn ensure_valid_repo(repository: &str) -> Result<()> {
         .output()?;
 
     if output.status.success() {
-        Ok(())
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .to_string()
+            .trim()
+            .to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
