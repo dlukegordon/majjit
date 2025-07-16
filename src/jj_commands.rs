@@ -1,11 +1,11 @@
+use crate::model::GlobalArgs;
+use crate::terminal;
 use anyhow::{Result, anyhow, bail};
 use ratatui::{Terminal, backend::Backend};
 use std::{
     io::Read,
     process::{Command, ExitStatus},
 };
-
-use crate::terminal;
 
 #[derive(Debug)]
 pub enum JjCommandError {
@@ -40,8 +40,8 @@ impl std::fmt::Display for JjCommandError {
 
 impl std::error::Error for JjCommandError {}
 
-fn run_jj_command(repository: &str, args: &[&str]) -> Result<String, JjCommandError> {
-    let mut command = get_jj_command(repository);
+fn run_jj_command(global_args: &GlobalArgs, args: &[&str]) -> Result<String, JjCommandError> {
+    let mut command = get_jj_command(global_args);
     command.args(args);
     let output = command
         .output()
@@ -62,11 +62,11 @@ fn run_jj_command(repository: &str, args: &[&str]) -> Result<String, JjCommandEr
 }
 
 fn run_jj_command_interactive(
-    repository: &str,
+    global_args: &GlobalArgs,
     args: &[&str],
     term: &mut Terminal<impl Backend>,
 ) -> Result<(), JjCommandError> {
-    let mut command = get_jj_command(repository);
+    let mut command = get_jj_command(global_args);
     command.args(args);
     command.stderr(std::process::Stdio::piped());
 
@@ -118,7 +118,7 @@ pub fn ensure_valid_repo(repository: &str) -> Result<()> {
     }
 }
 
-fn get_jj_command(repository: &str) -> Command {
+fn get_jj_command(global_args: &GlobalArgs) -> Command {
     let mut command = Command::new("jj");
     command
         // .env("JJ_CONFIG", "/dev/null")
@@ -153,30 +153,36 @@ fn get_jj_command(repository: &str) -> Command {
                 "#,
         )
         .arg("--repository")
-        .arg(repository);
-    // TODO: this should be toggleable
-    // .arg("--ignore-immutable");
+        .arg(&global_args.repository);
+
+    if global_args.ignore_immutable {
+        command.arg("--ignore-immutable");
+    }
 
     command
 }
 
-pub fn log(repository: &str, revset: &str) -> Result<String, JjCommandError> {
+pub fn log(global_args: &GlobalArgs, revset: &str) -> Result<String, JjCommandError> {
     let args = ["log", "--revisions", revset];
-    run_jj_command(repository, &args)
+    run_jj_command(global_args, &args)
 }
 
-pub fn diff_summary(repository: &str, change_id: &str) -> Result<String, JjCommandError> {
+pub fn diff_summary(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
     let args = ["diff", "--revisions", change_id, "--summary"];
-    run_jj_command(repository, &args)
+    run_jj_command(global_args, &args)
 }
 
-pub fn diff_file(repository: &str, change_id: &str, file: &str) -> Result<String, JjCommandError> {
+pub fn diff_file(
+    global_args: &GlobalArgs,
+    change_id: &str,
+    file: &str,
+) -> Result<String, JjCommandError> {
     let args = ["diff", "--revisions", change_id, file];
-    run_jj_command(repository, &args)
+    run_jj_command(global_args, &args)
 }
 
 pub fn show(
-    repository: &str,
+    global_args: &GlobalArgs,
     change_id: &str,
     maybe_file_path: Option<&str>,
     term: &mut Terminal<impl Backend>,
@@ -185,45 +191,48 @@ pub fn show(
         None => vec!["show", change_id],
         Some(file_path) => vec!["diff", "--revisions", change_id, file_path],
     };
-    run_jj_command_interactive(repository, &args, term)?;
+    run_jj_command_interactive(global_args, &args, term)?;
     Ok(())
 }
 
 pub fn describe(
-    repository: &str,
+    global_args: &GlobalArgs,
     change_id: &str,
     terminal: &mut Terminal<impl Backend>,
 ) -> Result<(), JjCommandError> {
     let args = ["describe", change_id];
-    run_jj_command_interactive(repository, &args, terminal)
+    run_jj_command_interactive(global_args, &args, terminal)
 }
 
-pub fn new(repository: &str, change_id: &str) -> Result<(), JjCommandError> {
+pub fn new(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
     let args = ["new", change_id];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn abandon(repository: &str, change_id: &str) -> Result<(), JjCommandError> {
+pub fn abandon(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
     let args = ["abandon", change_id];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn undo(repository: &str) -> Result<(), JjCommandError> {
+pub fn undo(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
     let args = ["undo"];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn commit(repository: &str, term: &mut Terminal<impl Backend>) -> Result<(), JjCommandError> {
+pub fn commit(
+    global_args: &GlobalArgs,
+    term: &mut Terminal<impl Backend>,
+) -> Result<(), JjCommandError> {
     let args = ["commit"];
-    run_jj_command_interactive(repository, &args, term)?;
+    run_jj_command_interactive(global_args, &args, term)?;
     Ok(())
 }
 
 pub fn squash(
-    repository: &str,
+    global_args: &GlobalArgs,
     change_id: &str,
     maybe_file_path: Option<&str>,
     term: &mut Terminal<impl Backend>,
@@ -232,30 +241,33 @@ pub fn squash(
     if let Some(file_path) = maybe_file_path {
         args.push(file_path);
     }
-    run_jj_command_interactive(repository, &args, term)?;
+    run_jj_command_interactive(global_args, &args, term)?;
     Ok(())
 }
 
-pub fn edit(repository: &str, change_id: &str) -> Result<(), JjCommandError> {
+pub fn edit(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
     let args = ["edit", change_id];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn fetch(repository: &str) -> Result<(), JjCommandError> {
+pub fn fetch(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
     let args = ["git", "fetch"];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn push(repository: &str) -> Result<(), JjCommandError> {
+pub fn push(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
     let args = ["git", "push"];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }
 
-pub fn bookmark_set_master(repository: &str, change_id: &str) -> Result<(), JjCommandError> {
+pub fn bookmark_set_master(
+    global_args: &GlobalArgs,
+    change_id: &str,
+) -> Result<(), JjCommandError> {
     let args = ["bookmark", "set", "master", "--revision", change_id];
-    run_jj_command(repository, &args)?;
+    run_jj_command(global_args, &args)?;
     Ok(())
 }

@@ -17,8 +17,14 @@ pub enum State {
 }
 
 #[derive(Debug)]
+pub struct GlobalArgs {
+    pub repository: String,
+    pub ignore_immutable: bool,
+}
+
+#[derive(Debug)]
 pub struct Model {
-    repository: String,
+    pub global_args: GlobalArgs,
     pub revset: String,
     pub state: State,
     jj_log: JjLog,
@@ -47,7 +53,10 @@ impl Model {
             log_list_layout: Rect::ZERO,
             log_list_scroll_padding: LOG_LIST_SCROLL_PADDING,
             info_list: None,
-            repository,
+            global_args: GlobalArgs {
+                repository,
+                ignore_immutable: false,
+            },
             revset,
         };
         model.sync()?;
@@ -68,7 +77,7 @@ impl Model {
     }
 
     pub fn sync(&mut self) -> Result<()> {
-        self.jj_log.load_log_tree(&self.repository, &self.revset)?;
+        self.jj_log.load_log_tree(&self.global_args, &self.revset)?;
         self.sync_log_list()?;
         self.reset_log_list_selection();
         Ok(())
@@ -77,6 +86,10 @@ impl Model {
     fn sync_log_list(&mut self) -> Result<()> {
         (self.log_list, self.log_list_tree_positions) = self.jj_log.flatten_log()?;
         Ok(())
+    }
+
+    pub fn toggle_ignore_immutable(&mut self) {
+        self.global_args.ignore_immutable = !self.global_args.ignore_immutable;
     }
 
     fn log_offset(&self) -> usize {
@@ -213,7 +226,7 @@ impl Model {
 
     pub fn toggle_current_fold(&mut self) -> Result<()> {
         let tree_pos = self.get_selected_tree_position();
-        let log_list_selected_idx = self.jj_log.toggle_fold(&tree_pos)?;
+        let log_list_selected_idx = self.jj_log.toggle_fold(&self.global_args, &tree_pos)?;
         self.sync_log_list()?;
         self.log_select(log_list_selected_idx);
         Ok(())
@@ -334,7 +347,7 @@ impl Model {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
-        let result = jj_commands::show(&self.repository, change_id, maybe_file_path, term);
+        let result = jj_commands::show(&self.global_args, change_id, maybe_file_path, term);
         self.handle_jj_command_result_nosync(result)
     }
 
@@ -342,7 +355,7 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::describe(&self.repository, change_id, term);
+        let result = jj_commands::describe(&self.global_args, change_id, term);
         self.handle_jj_command_result(result)
     }
 
@@ -350,7 +363,7 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::new(&self.repository, change_id);
+        let result = jj_commands::new(&self.global_args, change_id);
         self.handle_jj_command_result(result)
     }
 
@@ -358,17 +371,17 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::abandon(&self.repository, change_id);
+        let result = jj_commands::abandon(&self.global_args, change_id);
         self.handle_jj_command_result(result)
     }
 
     pub fn jj_undo(&mut self) -> Result<()> {
-        let result = jj_commands::undo(&self.repository);
+        let result = jj_commands::undo(&self.global_args);
         self.handle_jj_command_result(result)
     }
 
     pub fn jj_commit(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let result = jj_commands::commit(&self.repository, term);
+        let result = jj_commands::commit(&self.global_args, term);
         self.handle_jj_command_result(result)
     }
 
@@ -377,7 +390,7 @@ impl Model {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
-        let result = jj_commands::squash(&self.repository, change_id, maybe_file_path, term);
+        let result = jj_commands::squash(&self.global_args, change_id, maybe_file_path, term);
         self.handle_jj_command_result(result)
     }
 
@@ -385,17 +398,17 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::edit(&self.repository, change_id);
+        let result = jj_commands::edit(&self.global_args, change_id);
         self.handle_jj_command_result(result)
     }
 
     pub fn jj_fetch(&mut self) -> Result<()> {
-        let result = jj_commands::fetch(&self.repository);
+        let result = jj_commands::fetch(&self.global_args);
         self.handle_jj_command_result(result)
     }
 
     pub fn jj_push(&mut self) -> Result<()> {
-        let result = jj_commands::push(&self.repository);
+        let result = jj_commands::push(&self.global_args);
         self.handle_jj_command_result(result)
     }
 
@@ -403,7 +416,7 @@ impl Model {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::bookmark_set_master(&self.repository, change_id);
+        let result = jj_commands::bookmark_set_master(&self.global_args, change_id);
         self.handle_jj_command_result(result)
     }
 

@@ -1,4 +1,5 @@
 use crate::jj_commands;
+use crate::model::GlobalArgs;
 use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
 use ratatui::{
@@ -20,8 +21,8 @@ impl JjLog {
         })
     }
 
-    pub fn load_log_tree(&mut self, repository: &str, revset: &str) -> Result<()> {
-        self.log_tree = CommitOrText::load_all(repository, revset)?;
+    pub fn load_log_tree(&mut self, global_args: &GlobalArgs, revset: &str) -> Result<()> {
+        self.log_tree = CommitOrText::load_all(global_args, revset)?;
         Ok(())
     }
 
@@ -107,11 +108,15 @@ impl JjLog {
         })
     }
 
-    pub fn toggle_fold(&mut self, tree_pos: &TreePosition) -> Result<usize> {
+    pub fn toggle_fold(
+        &mut self,
+        global_args: &GlobalArgs,
+        tree_pos: &TreePosition,
+    ) -> Result<usize> {
         let mut tree_pos = tree_pos.clone();
         tree_pos.truncate(DIFF_HUNK_IDX + 1);
         let node = self.get_tree_node(&tree_pos)?;
-        node.toggle_fold()?;
+        node.toggle_fold(global_args)?;
         Ok(node.flat_log_idx())
     }
 }
@@ -126,7 +131,7 @@ pub trait LogTreeNode {
     ) -> Result<()>;
     fn flat_log_idx(&self) -> usize;
     fn children(&self) -> Vec<&dyn LogTreeNode>;
-    fn toggle_fold(&mut self) -> Result<()>;
+    fn toggle_fold(&mut self, global_args: &GlobalArgs) -> Result<()>;
 }
 
 pub type TreePosition = Vec<usize>;
@@ -153,8 +158,8 @@ pub enum CommitOrText {
 }
 
 impl CommitOrText {
-    fn load_all(repository: &str, revset: &str) -> Result<Vec<Self>> {
-        let output = jj_commands::log(repository, revset)?;
+    fn load_all(global_args: &GlobalArgs, revset: &str) -> Result<Vec<Self>> {
+        let output = jj_commands::log(global_args, revset)?;
         let mut lines = output.trim().lines();
         let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8}).*$")?;
 
@@ -171,10 +176,7 @@ impl CommitOrText {
             };
 
             let line2 = lines.next().unwrap_or_default();
-            commits_or_texts.push(Self::Commit(Commit::new(
-                repository.to_string(),
-                format!("{line1}\n{line2}"),
-            )?));
+            commits_or_texts.push(Self::Commit(Commit::new(format!("{line1}\n{line2}"))?));
         }
 
         Ok(commits_or_texts)
@@ -206,7 +208,6 @@ impl CommitOrText {
 
 #[derive(Debug)]
 pub struct Commit {
-    repository: String,
     pub change_id: String,
     _commit_id: String,
     pub current_working_copy: bool,
@@ -224,7 +225,7 @@ pub struct Commit {
 }
 
 impl Commit {
-    fn new(repository: String, pretty_string: String) -> Result<Self> {
+    fn new(pretty_string: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
         let re_fields =
             Regex::new(r"^([ │]*)(.)\s+([k-z]{8})\s+.*\s+([a-f0-9]{8})\s*(\S*)\s*\n([ │├─╯]*)")?;
@@ -290,8 +291,7 @@ impl Commit {
             .as_str()
             .into();
 
-        let mut commit = Commit {
-            repository,
+        Ok(Commit {
             change_id,
             _commit_id: commit_id,
             current_working_copy,
@@ -306,14 +306,7 @@ impl Commit {
             loaded: false,
             file_diffs: Vec::new(),
             flat_log_idx: 0,
-        };
-
-        // Start unfolded for @ commit
-        if commit.current_working_copy {
-            commit.toggle_fold()?;
-        }
-
-        Ok(commit)
+        })
     }
 }
 
@@ -380,15 +373,14 @@ impl LogTreeNode for Commit {
             .collect()
     }
 
-    fn toggle_fold(&mut self) -> Result<()> {
+    fn toggle_fold(&mut self, global_args: &GlobalArgs) -> Result<()> {
         self.unfolded = !self.unfolded;
         if !self.unfolded {
             return Ok(());
         }
 
         if !self.loaded {
-            let file_diffs =
-                FileDiff::load_all(&self.repository, &self.change_id, &self.graph_indent)?;
+            let file_diffs = FileDiff::load_all(global_args, &self.change_id, &self.graph_indent)?;
             self.file_diffs = file_diffs;
             self.loaded = true;
         }
@@ -437,14 +429,13 @@ impl LogTreeNode for InfoText {
         Vec::new()
     }
 
-    fn toggle_fold(&mut self) -> Result<()> {
+    fn toggle_fold(&mut self, _global_args: &GlobalArgs) -> Result<()> {
         Ok(())
     }
 }
 
 #[derive(Debug)]
 pub struct FileDiff {
-    repository: String,
     change_id: String,
     pub path: String,
     description: String,
@@ -457,12 +448,7 @@ pub struct FileDiff {
 }
 
 impl FileDiff {
-    pub fn new(
-        repository: String,
-        change_id: String,
-        pretty_string: String,
-        graph_indent: String,
-    ) -> Result<Self> {
+    pub fn new(change_id: String, pretty_string: String, graph_indent: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
         let re = Regex::new(r"^([MADR])\s+(.+)$").unwrap();
 
@@ -501,7 +487,6 @@ impl FileDiff {
         };
 
         Ok(Self {
-            repository,
             change_id,
             path,
             description,
@@ -514,14 +499,17 @@ impl FileDiff {
         })
     }
 
-    fn load_all(repository: &str, change_id: &str, graph_indent: &str) -> Result<Vec<Self>> {
-        let output = jj_commands::diff_summary(repository, change_id)?;
+    fn load_all(
+        global_args: &GlobalArgs,
+        change_id: &str,
+        graph_indent: &str,
+    ) -> Result<Vec<Self>> {
+        let output = jj_commands::diff_summary(global_args, change_id)?;
         let lines: Vec<&str> = output.trim().lines().collect();
 
         let mut file_diffs = Vec::new();
         for line in lines {
             file_diffs.push(Self::new(
-                repository.to_string(),
                 change_id.to_string(),
                 line.to_string(),
                 graph_indent.to_string(),
@@ -580,19 +568,15 @@ impl LogTreeNode for FileDiff {
             .collect()
     }
 
-    fn toggle_fold(&mut self) -> Result<()> {
+    fn toggle_fold(&mut self, global_args: &GlobalArgs) -> Result<()> {
         self.unfolded = !self.unfolded;
         if !self.unfolded {
             return Ok(());
         }
 
         if !self.loaded {
-            let diff_hunks = DiffHunk::load_all(
-                &self.repository,
-                &self.change_id,
-                &self.path,
-                &self.graph_indent,
-            )?;
+            let diff_hunks =
+                DiffHunk::load_all(global_args, &self.change_id, &self.path, &self.graph_indent)?;
             self.diff_hunks = diff_hunks;
             self.loaded = true;
         }
@@ -715,12 +699,12 @@ impl DiffHunk {
     }
 
     fn load_all(
-        repository: &str,
+        global_args: &GlobalArgs,
         change_id: &str,
         file: &str,
         graph_indent: &str,
     ) -> Result<Vec<Self>> {
-        let output = jj_commands::diff_file(repository, change_id, file)?;
+        let output = jj_commands::diff_file(global_args, change_id, file)?;
         let output_lines: Vec<&str> = output.trim().lines().skip(1).collect();
 
         let separator_regex = Regex::new(r"\s*\.\.\.\s*")?;
@@ -743,7 +727,6 @@ impl DiffHunk {
             } else {
                 diff_hunk_lines.push(DiffHunkLine::new(
                     line.to_string(),
-                    // line.replacen(' ', "", 1).to_string(),
                     graph_indent.to_string(),
                 ));
             }
@@ -819,7 +802,7 @@ impl LogTreeNode for DiffHunk {
             .collect()
     }
 
-    fn toggle_fold(&mut self) -> Result<()> {
+    fn toggle_fold(&mut self, _global_args: &GlobalArgs) -> Result<()> {
         self.unfolded = !self.unfolded;
         Ok(())
     }
@@ -880,7 +863,7 @@ impl LogTreeNode for DiffHunkLine {
         Vec::new()
     }
 
-    fn toggle_fold(&mut self) -> Result<()> {
+    fn toggle_fold(&mut self, _global_args: &GlobalArgs) -> Result<()> {
         Ok(())
     }
 }
