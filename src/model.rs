@@ -59,8 +59,8 @@ impl Model {
             },
             revset,
         };
-        model.sync()?;
 
+        model.sync()?;
         Ok(model)
     }
 
@@ -68,18 +68,20 @@ impl Model {
         self.state = State::Quit;
     }
 
-    fn reset_log_list_selection(&mut self) {
+    fn reset_log_list_selection(&mut self) -> Result<()> {
+        // Start with @ selected and unfolded
         let list_idx = match self.jj_log.get_current_commit() {
             None => 0,
             Some(commit) => commit.flat_log_idx,
         };
         self.log_select(list_idx);
+        self.toggle_current_fold()
     }
 
     pub fn sync(&mut self) -> Result<()> {
         self.jj_log.load_log_tree(&self.global_args, &self.revset)?;
         self.sync_log_list()?;
-        self.reset_log_list_selection();
+        self.reset_log_list_selection()?;
         Ok(())
     }
 
