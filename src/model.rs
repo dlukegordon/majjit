@@ -449,8 +449,8 @@ impl Model {
             Err(err) => match err {
                 JjCommandError::Other { err } => Err(err),
                 JjCommandError::Failed {
-                    command: _,
-                    status: _,
+                    _args,
+                    _status,
                     stderr,
                 } => {
                     self.info_list = Some(

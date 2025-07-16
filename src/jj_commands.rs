@@ -1,6 +1,6 @@
 use crate::model::GlobalArgs;
 use crate::terminal;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use ratatui::{Terminal, backend::Backend};
 use std::{
     io::Read,
@@ -10,8 +10,8 @@ use std::{
 #[derive(Debug)]
 pub enum JjCommandError {
     Failed {
-        command: String,
-        status: ExitStatus,
+        _args: String,
+        _status: ExitStatus,
         stderr: String,
     },
     Other {
@@ -19,19 +19,29 @@ pub enum JjCommandError {
     },
 }
 
+impl JjCommandError {
+    fn new_failed(args: &[&str], status: ExitStatus, stderr: String) -> Self {
+        Self::Failed {
+            _args: format!("{args:?}"),
+            _status: status,
+            stderr: stderr.trim().to_string(),
+        }
+    }
+
+    fn new_other(err: impl Into<anyhow::Error>) -> Self {
+        Self::Other { err: err.into() }
+    }
+}
+
 impl std::fmt::Display for JjCommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Failed {
-                command,
-                status,
+                _args,
+                _status,
                 stderr,
             } => {
-                write!(
-                    f,
-                    "Jj command '{}' failed with {}:\n{}",
-                    command, status, stderr
-                )
+                write!(f, "{stderr}")
             }
             Self::Other { err } => err.fmt(f),
         }
@@ -43,21 +53,14 @@ impl std::error::Error for JjCommandError {}
 fn run_jj_command(global_args: &GlobalArgs, args: &[&str]) -> Result<String, JjCommandError> {
     let mut command = get_jj_command(global_args);
     command.args(args);
-    let output = command
-        .output()
-        .map_err(|e| JjCommandError::Other { err: e.into() })?;
+    let output = command.output().map_err(JjCommandError::new_other)?;
 
     if output.status.success() {
-        let stdout = String::from_utf8(output.stdout)
-            .map_err(|e| JjCommandError::Other { err: e.into() })?;
+        let stdout = String::from_utf8(output.stdout).map_err(JjCommandError::new_other)?;
         Ok(stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).into();
-        Err(JjCommandError::Failed {
-            command: format!("{args:?}"),
-            status: output.status,
-            stderr,
-        })
+        Err(JjCommandError::new_failed(args, output.status, stderr))
     }
 }
 
@@ -70,43 +73,40 @@ fn run_jj_command_interactive(
     command.args(args);
     command.stderr(std::process::Stdio::piped());
 
-    terminal::relinquish_terminal().map_err(|e| JjCommandError::Other { err: e })?;
-    let mut child = command
-        .spawn()
-        .map_err(|e| JjCommandError::Other { err: e.into() })?;
-    let status = child
-        .wait()
-        .map_err(|e| JjCommandError::Other { err: e.into() })?;
+    terminal::relinquish_terminal().map_err(JjCommandError::new_other)?;
+
+    let mut child = command.spawn().map_err(JjCommandError::new_other)?;
+    let status = child.wait().map_err(JjCommandError::new_other)?;
     let mut stderr = String::new();
     child
         .stderr
         .take()
-        .ok_or_else(|| JjCommandError::Other {
-            err: anyhow!("No stderr"),
-        })?
+        .ok_or_else(|| JjCommandError::new_other(anyhow!("No stderr")))?
         .read_to_string(&mut stderr)
-        .map_err(|e| JjCommandError::Other { err: e.into() })?;
-    terminal::takeover_terminal(term).map_err(|e| JjCommandError::Other { err: e })?;
+        .map_err(JjCommandError::new_other)?;
+
+    terminal::takeover_terminal(term).map_err(JjCommandError::new_other)?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(JjCommandError::Failed {
-            command: format!("{args:?}"),
-            status,
-            stderr,
-        })
+        Err(JjCommandError::new_failed(args, status, stderr))
     }
 }
 
-pub fn ensure_valid_repo(repository: &str) -> Result<String> {
+pub fn ensure_valid_repo(repository: &str) -> Result<String, JjCommandError> {
+    let args = [
+        "--repository",
+        repository,
+        "workspace",
+        "root",
+        "--color",
+        "always",
+    ];
     let output = Command::new("jj")
-        .env("JJ_CONFIG", "/dev/null")
-        .arg("--repository")
-        .arg(repository)
-        .arg("workspace")
-        .arg("root")
-        .output()?;
+        .args(args)
+        .output()
+        .map_err(JjCommandError::new_other)?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout)
@@ -114,49 +114,46 @@ pub fn ensure_valid_repo(repository: &str) -> Result<String> {
             .trim()
             .to_string())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr = stderr.trim();
-        let err_msg = stderr.strip_prefix("Error: ").unwrap_or(stderr);
-        bail!("{}", err_msg);
+        let stderr = String::from_utf8_lossy(&output.stderr).into();
+        Err(JjCommandError::new_failed(&args, output.status, stderr))
     }
 }
 
 fn get_jj_command(global_args: &GlobalArgs) -> Command {
     let mut command = Command::new("jj");
-    command
-        // .env("JJ_CONFIG", "/dev/null")
-        .arg("--color")
-        .arg("always")
-        .arg("--config")
-        .arg("colors.'diff added token'={underline=false}")
-        .arg("--config")
-        .arg("colors.'diff removed token'={underline=false}")
-        .arg("--config")
-        .arg("colors.'diff token'={underline=false}")
-        .arg("--config")
-        .arg(
-            r#"templates.log_node=
-                    coalesce(
-                      if(!self, label("elided", "~")),
-                      label(
-                        separate(" ",
-                          if(current_working_copy, "working_copy"),
-                          if(immutable, "immutable"),
-                          if(conflict, "conflict"),
-                        ),
-                        coalesce(
-                          if(current_working_copy, "@"),
-                          if(root, "┴"),
-                          if(immutable, "●"),
-                          if(conflict, "⊗"),
-                          "○",
-                        )
-                      )
-                    )
-                "#,
-        )
-        .arg("--repository")
-        .arg(&global_args.repository);
+    let args = [
+        "--color",
+        "always",
+        "--config",
+        "colors.'diff added token'={underline=false}",
+        "--config",
+        "colors.'diff removed token'={underline=false}",
+        "--config",
+        "colors.'diff token'={underline=false}",
+        "--config",
+        r#"templates.log_node=
+            coalesce(
+              if(!self, label("elided", "~")),
+              label(
+                separate(" ",
+                  if(current_working_copy, "working_copy"),
+                  if(immutable, "immutable"),
+                  if(conflict, "conflict"),
+                ),
+                coalesce(
+                  if(current_working_copy, "@"),
+                  if(root, "┴"),
+                  if(immutable, "●"),
+                  if(conflict, "⊗"),
+                  "○",
+                )
+              )
+            )
+        "#,
+        "--repository",
+        &global_args.repository,
+    ];
+    command.args(args);
 
     if global_args.ignore_immutable {
         command.arg("--ignore-immutable");
