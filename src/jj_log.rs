@@ -214,6 +214,7 @@ pub struct Commit {
     has_conflict: bool,
     symbol: String,
     line1_graph_chars: String,
+    line1_graph_chars_part2: String,
     line2_graph_chars: String,
     pretty_line1: String,
     pretty_line2: String,
@@ -227,16 +228,17 @@ pub struct Commit {
 impl Commit {
     fn new(pretty_string: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
-        let re_fields =
-            Regex::new(r"^([ │]*)(.)\s+([k-z]{8})\s+.*\s+([a-f0-9]{8})\s*(\S*)\s*\n([ │├─╯]*)")?;
-        let re_lines = Regex::new(r"^[ │]*\S+\s+(.*)\n[ │├─╯]*(.*)")?;
+        let re_fields = Regex::new(
+            r"^([ │]*)(.)([ │]*)  ([k-z]{8,})\s+.*\s+([a-f0-9]{8,})\s*(\S*)\s*\n([ │├─╯╮]*)",
+        )?;
+        let re_lines = Regex::new(r"^[ │]*\S+[ │]*(.*)\n[ │├─╯╮]*(.*)")?;
 
         let captures = re_fields
             .captures(&clean_string)
             .ok_or_else(|| anyhow!("Cannot parse commit fields: {:?}", clean_string))?;
         let line1_graph_chars: String = captures
             .get(1)
-            .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
+            .ok_or_else(|| anyhow!("Cannot parse line 1 graph chars"))?
             .as_str()
             .into();
         let symbol = captures
@@ -244,23 +246,28 @@ impl Commit {
             .ok_or_else(|| anyhow!("Cannot parse commit symbol"))?
             .as_str()
             .into();
-        let change_id = captures
+        let line1_graph_chars_part2 = captures
             .get(3)
+            .ok_or_else(|| anyhow!("Cannot parse line 1 graph chars part 2"))?
+            .as_str()
+            .into();
+        let change_id = captures
+            .get(4)
             .ok_or_else(|| anyhow!("Cannot parse commit change id"))?
             .as_str()
             .into();
         let commit_id = captures
-            .get(4)
+            .get(5)
             .ok_or_else(|| anyhow!("Cannot parse commit id"))?
             .as_str()
             .into();
         let conflict_status: String = captures
-            .get(5)
+            .get(6)
             .ok_or_else(|| anyhow!("Cannot parse conflict status"))?
             .as_str()
             .into();
         let line2_graph_chars: String = captures
-            .get(6)
+            .get(7)
             .ok_or_else(|| anyhow!("Cannot parse line 2 graph chars"))?
             .as_str()
             .into();
@@ -298,6 +305,7 @@ impl Commit {
             has_conflict,
             symbol,
             line1_graph_chars,
+            line1_graph_chars_part2,
             line2_graph_chars,
             pretty_line1,
             pretty_line2,
@@ -322,6 +330,7 @@ impl LogTreeNode for Commit {
                     Style::default()
                 },
             ),
+            Span::raw(self.line1_graph_chars_part2.clone()),
             Span::raw(" "),
             fold_symbol(self.unfolded),
             Span::raw(" "),
@@ -615,7 +624,7 @@ impl fmt::Display for FileDiffStatus {
             FileDiffStatus::Deleted => "deleted ",
             FileDiffStatus::Renamed => "renamed ",
         };
-        write!(f, "{}", word)
+        write!(f, "{word}")
     }
 }
 
