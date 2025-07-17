@@ -650,6 +650,19 @@ impl DiffHunk {
         let (red_start, green_start) =
             Self::find_line_nums(&diff_hunk_lines, SearchDirection::Down)?;
         let (red_end, green_end) = Self::find_line_nums(&diff_hunk_lines, SearchDirection::Up)?;
+
+        // Align line nums
+        let max_line_num = red_end.max(green_end);
+        let line_num_chars_len = max_line_num.ilog10() as usize;
+        let mut diff_hunk_lines = diff_hunk_lines;
+        for line in diff_hunk_lines.iter_mut() {
+            line.pretty_string = line.pretty_string.replacen(
+                &" ".repeat(3_usize.saturating_sub(line_num_chars_len)),
+                "",
+                1,
+            );
+        }
+
         Ok(Self {
             graph_indent,
             unfolded: true,
