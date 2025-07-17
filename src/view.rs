@@ -24,7 +24,7 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
     if model.global_args.ignore_immutable {
         header_spans.push(Span::styled(
             "  --ignore-immutable",
-            Style::default().fg(Color::Red),
+            Style::default().fg(Color::LightRed),
         ));
     }
     let header = Paragraph::new(Line::from(header_spans));

@@ -124,12 +124,12 @@ fn get_jj_command(global_args: &GlobalArgs) -> Command {
     let args = [
         "--color",
         "always",
-        "--config",
-        "colors.'diff added token'={underline=false}",
-        "--config",
-        "colors.'diff removed token'={underline=false}",
-        "--config",
-        "colors.'diff token'={underline=false}",
+        // "--config",
+        // "colors.'diff added token'={underline=false}",
+        // "--config",
+        // "colors.'diff removed token'={underline=false}",
+        // "--config",
+        // "colors.'diff token'={underline=false}",
         "--config",
         r#"templates.log_node=
             coalesce(
