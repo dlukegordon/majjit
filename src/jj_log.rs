@@ -672,19 +672,17 @@ impl DiffHunk {
             let captures = line_nums_regex
                 .captures(&line)
                 .ok_or_else(|| anyhow!("Cannot parse diff hunk line: {line:?}"))?;
-            if red.is_none() {
-                if let Some(num_match) = captures.get(1) {
-                    if !num_match.is_empty() {
-                        red = Some(num_match.as_str().to_string())
-                    }
-                }
+            if red.is_none()
+                && let Some(num_match) = captures.get(1)
+                && !num_match.is_empty()
+            {
+                red = Some(num_match.as_str().to_string())
             }
-            if green.is_none() {
-                if let Some(num_match) = captures.get(2) {
-                    if !num_match.is_empty() {
-                        green = Some(num_match.as_str().to_string())
-                    }
-                }
+            if green.is_none()
+                && let Some(num_match) = captures.get(2)
+                && !num_match.is_empty()
+            {
+                green = Some(num_match.as_str().to_string())
             }
 
             if red.is_some() && green.is_some() {
