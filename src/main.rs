@@ -1,6 +1,7 @@
 mod cli;
+mod command_tree;
 mod jj_commands;
-mod jj_log;
+mod log_tree;
 mod model;
 mod terminal;
 mod update;

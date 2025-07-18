@@ -38,8 +38,8 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
         .constraints([
             Constraint::Length(2),
             Constraint::Min(0),
-            if model.info_list.is_some() {
-                Constraint::Ratio(1, 4)
+            if let Some(info_list) = &model.info_list {
+                Constraint::Length(info_list.lines.len() as u16 + 2)
             } else {
                 Constraint::Length(0)
             },

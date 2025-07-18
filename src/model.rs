@@ -1,8 +1,8 @@
 use crate::{
+    command_tree::CommandTree,
     jj_commands::{self, JjCommandError},
-    jj_log::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
+    log_tree::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
 };
-
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
@@ -27,13 +27,14 @@ pub struct Model {
     pub global_args: GlobalArgs,
     pub revset: String,
     pub state: State,
+    pub command_tree: CommandTree,
     jj_log: JjLog,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
     log_list_tree_positions: Vec<TreePosition>,
     pub log_list_layout: Rect,
     pub log_list_scroll_padding: usize,
-    pub info_list: Option<Vec<Text<'static>>>,
+    pub info_list: Option<Text<'static>>,
 }
 
 #[derive(Debug)]
@@ -46,6 +47,7 @@ impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         let mut model = Self {
             state: State::default(),
+            command_tree: CommandTree::new(),
             jj_log: JjLog::new()?,
             log_list: Vec::new(),
             log_list_state: ListState::default(),
@@ -236,6 +238,10 @@ impl Model {
 
     pub fn clear(&mut self) {
         self.info_list = None;
+    }
+
+    pub fn show_help(&mut self) {
+        self.info_list = Some(self.command_tree.get_help());
     }
 
     pub fn scroll_down_once(&mut self) {
@@ -438,6 +444,8 @@ impl Model {
         result: Result<(), JjCommandError>,
         sync_on_success: bool,
     ) -> Result<()> {
+        self.clear();
+
         match result {
             Ok(_) => {
                 if sync_on_success {
@@ -453,12 +461,7 @@ impl Model {
                     _status,
                     stderr,
                 } => {
-                    self.info_list = Some(
-                        stderr
-                            .lines()
-                            .map(|line| line.into_text().unwrap())
-                            .collect(),
-                    );
+                    self.info_list = Some(stderr.into_text()?);
                     Ok(())
                 }
             },

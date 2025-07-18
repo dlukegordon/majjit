@@ -579,7 +579,7 @@ impl LogTreeNode for FileDiff {
 
     fn toggle_fold(&mut self, global_args: &GlobalArgs) -> Result<()> {
         self.unfolded = !self.unfolded;
-        if !self.unfolded {
+        if !self.unfolded || !matches!(self.status, FileDiffStatus::Modified) {
             return Ok(());
         }
 
