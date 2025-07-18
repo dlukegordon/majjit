@@ -1,5 +1,5 @@
 use crate::{
-    command_tree::{CommandTree, CommandTreeNodeData},
+    command_tree::{CommandTree, CommandTreeNode},
     model::Model,
 };
 use anyhow::Result;
@@ -88,9 +88,9 @@ fn handle_key(command_tree: &CommandTree, key: event::KeyEvent) -> Option<Messag
         KeyCode::Char('@') => Some(Message::SelectCurrentWorkingCopy),
         KeyCode::Char('i') => Some(Message::ToggleIgnoreImmutable),
         KeyCode::Char('?') => Some(Message::ShowHelp),
-        _ => match command_tree.get(&key.code)? {
-            CommandTreeNodeData::Children(_children) => None,
-            CommandTreeNodeData::Action(message) => Some(*message),
+        _ => match command_tree.get_node(&key.code)? {
+            CommandTreeNode::Children(_children) => None,
+            CommandTreeNode::Action(message) => Some(*message),
         },
     }
 }
