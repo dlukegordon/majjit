@@ -1,7 +1,4 @@
-use crate::{
-    command_tree::{CommandTree, CommandTreeNode},
-    model::Model,
-};
+use crate::model::Model;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{Terminal, backend::Backend};
@@ -51,12 +48,12 @@ pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Resul
     Ok(())
 }
 
-fn handle_event(model: &Model) -> Result<Option<Message>> {
+fn handle_event(model: &mut Model) -> Result<Option<Message>> {
     if event::poll(EVENT_POLL_DURATION)? {
         match event::read()? {
             Event::Key(key) => {
                 if key.kind == event::KeyEventKind::Press {
-                    return Ok(handle_key(&model.command_tree, key));
+                    return Ok(handle_key(model, key));
                 }
             }
             Event::Mouse(mouse) => {
@@ -68,7 +65,7 @@ fn handle_event(model: &Model) -> Result<Option<Message>> {
     Ok(None)
 }
 
-fn handle_key(command_tree: &CommandTree, key: event::KeyEvent) -> Option<Message> {
+fn handle_key(model: &mut Model, key: event::KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Char('q') => Some(Message::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Quit),
@@ -88,10 +85,7 @@ fn handle_key(command_tree: &CommandTree, key: event::KeyEvent) -> Option<Messag
         KeyCode::Char('@') => Some(Message::SelectCurrentWorkingCopy),
         KeyCode::Char('i') => Some(Message::ToggleIgnoreImmutable),
         KeyCode::Char('?') => Some(Message::ShowHelp),
-        _ => match command_tree.get_node(&key.code)? {
-            CommandTreeNode::Children(_children) => None,
-            CommandTreeNode::Action(message) => Some(*message),
-        },
+        _ => model.handle_command_key(key.code),
     }
 }
 

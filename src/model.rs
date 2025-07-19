@@ -1,10 +1,12 @@
 use crate::{
-    command_tree::CommandTree,
+    command_tree::{CommandTree, CommandTreeNode},
     jj_commands::{self, JjCommandError},
     log_tree::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
+    update::Message,
 };
 use ansi_to_tui::IntoText;
 use anyhow::Result;
+use crossterm::event::KeyCode;
 use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
 
 const LOG_LIST_SCROLL_PADDING: usize = 0;
@@ -28,6 +30,7 @@ pub struct Model {
     pub revset: String,
     pub state: State,
     pub command_tree: CommandTree,
+    command_keys: Vec<KeyCode>,
     jj_log: JjLog,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
@@ -48,6 +51,7 @@ impl Model {
         let mut model = Self {
             state: State::default(),
             command_tree: CommandTree::new(),
+            command_keys: Vec::new(),
             jj_log: JjLog::new()?,
             log_list: Vec::new(),
             log_list_state: ListState::default(),
@@ -242,6 +246,22 @@ impl Model {
 
     pub fn show_help(&mut self) {
         self.info_list = Some(self.command_tree.get_help());
+    }
+
+    pub fn handle_command_key(&mut self, key_code: KeyCode) -> Option<Message> {
+        self.command_keys.push(key_code);
+
+        let node = self.command_tree.get_node(&self.command_keys)?;
+        match node {
+            CommandTreeNode::Children(children) => {
+                self.info_list = Some(children.get_help());
+                None
+            }
+            CommandTreeNode::Action(message) => {
+                self.command_keys.clear();
+                Some(*message)
+            }
+        }
     }
 
     pub fn scroll_down_once(&mut self) {

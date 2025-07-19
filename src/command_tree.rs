@@ -80,6 +80,10 @@ impl CommandTreeNodeChildren {
         self.nodes.get(key_code)
     }
 
+    pub fn get_node_mut(&mut self, key_code: &KeyCode) -> Option<&mut CommandTreeNode> {
+        self.nodes.get_mut(key_code)
+    }
+
     pub fn get_help_entries(&self) -> HelpEntries {
         let mut help = self.help.clone();
 
@@ -90,16 +94,21 @@ impl CommandTreeNodeChildren {
         help
     }
 
+    pub fn get_help(&self) -> Text<'static> {
+        let entries = self.get_help_entries();
+        render_help_text(entries)
+    }
+
     pub fn add_child(
         &mut self,
         help_group_text: &str,
-        help_text: String,
+        help_text: &str,
         key_code: KeyCode,
         node: CommandTreeNode,
     ) {
         self.nodes.insert(key_code, node);
         let help_group = self.help.entry(help_group_text.to_string()).or_default();
-        help_group.push((key_code.to_string(), help_text))
+        help_group.push((key_code.to_string(), help_text.to_string()))
     }
 }
 
@@ -126,26 +135,44 @@ impl CommandTree {
         }
     }
 
-    fn children_mut(&mut self) -> &mut CommandTreeNodeChildren {
-        match &mut self.0 {
-            CommandTreeNode::Action(_) => unreachable!(),
-            CommandTreeNode::Children(children) => children,
-        }
-    }
-
-    fn add_children(
-        &mut self,
-        help_group_text: &str,
-        entries: Vec<(&str, KeyCode, CommandTreeNode)>,
-    ) {
-        for (help_text, key_code, node) in entries {
-            self.children_mut()
-                .add_child(help_group_text, help_text.to_string(), key_code, node);
+    fn add_children(&mut self, entries: Vec<(&str, &str, Vec<KeyCode>, CommandTreeNode)>) {
+        for (help_group_text, help_text, key_codes, node) in entries {
+            let (last_key, rest_keys) = key_codes.split_last().unwrap();
+            let dest_node = self.get_node_mut(rest_keys).unwrap();
+            let children = match dest_node {
+                CommandTreeNode::Action(_) => unreachable!(),
+                CommandTreeNode::Children(children) => children,
+            };
+            children.add_child(help_group_text, help_text, *last_key, node)
         }
     }
 
     pub fn get_node(&self, key_codes: &[KeyCode]) -> Option<&CommandTreeNode> {
-        self.children().get_node(&key_codes[0])
+        let mut node = &self.0;
+
+        for key_code in key_codes {
+            let children = match node {
+                CommandTreeNode::Action(_) => return None,
+                CommandTreeNode::Children(children) => children,
+            };
+            node = children.get_node(key_code)?;
+        }
+
+        Some(node)
+    }
+
+    fn get_node_mut(&mut self, key_codes: &[KeyCode]) -> Option<&mut CommandTreeNode> {
+        let mut node = &mut self.0;
+
+        for key_code in key_codes {
+            let children = match node {
+                CommandTreeNode::Action(_) => return None,
+                CommandTreeNode::Children(children) => children,
+            };
+            node = children.get_node_mut(key_code)?;
+        }
+
+        Some(node)
     }
 
     pub fn get_help(&self) -> Text<'static> {
@@ -185,59 +212,87 @@ impl CommandTree {
     pub fn new() -> Self {
         let items = vec![
             (
+                "Commands",
                 "Describe change",
-                KeyCode::Char('d'),
+                vec![KeyCode::Char('d')],
                 CommandTreeNode::Action(Message::Describe),
             ),
             (
+                "Commands",
                 "New change",
-                KeyCode::Char('n'),
+                vec![KeyCode::Char('n')],
                 CommandTreeNode::Action(Message::New),
             ),
             (
+                "Commands",
                 "Abandon change",
-                KeyCode::Char('a'),
+                vec![KeyCode::Char('a')],
                 CommandTreeNode::Action(Message::Abandon),
             ),
             (
+                "Commands",
                 "Undo operation",
-                KeyCode::Char('u'),
+                vec![KeyCode::Char('u')],
                 CommandTreeNode::Action(Message::Undo),
             ),
             (
+                "Commands",
                 "Commit change",
-                KeyCode::Char('c'),
+                vec![KeyCode::Char('c')],
                 CommandTreeNode::Action(Message::Commit),
             ),
             (
+                "Commands",
                 "Squash change",
-                KeyCode::Char('s'),
+                vec![KeyCode::Char('s')],
                 CommandTreeNode::Action(Message::Squash),
             ),
             (
+                "Commands",
                 "Edit change",
-                KeyCode::Char('e'),
+                vec![KeyCode::Char('e')],
                 CommandTreeNode::Action(Message::Edit),
             ),
             (
+                "Commands",
                 "Git fetch",
-                KeyCode::Char('f'),
+                vec![KeyCode::Char('f')],
                 CommandTreeNode::Action(Message::Fetch),
             ),
             (
+                "Commands",
                 "Git push",
-                KeyCode::Char('p'),
+                vec![KeyCode::Char('p')],
                 CommandTreeNode::Action(Message::Push),
             ),
             (
+                "Commands",
                 "Set master bookmark",
-                KeyCode::Char('m'),
+                vec![KeyCode::Char('m')],
                 CommandTreeNode::Action(Message::BookmarkSetMaster),
+            ),
+            (
+                "Commands",
+                "Git",
+                vec![KeyCode::Char('g')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Git",
+                "Fetch",
+                vec![KeyCode::Char('g'), KeyCode::Char('f')],
+                CommandTreeNode::Action(Message::Fetch),
+            ),
+            (
+                "Git",
+                "Push",
+                vec![KeyCode::Char('g'), KeyCode::Char('p')],
+                CommandTreeNode::Action(Message::Push),
             ),
         ];
 
         let mut tree = Self(CommandTreeNode::new_children());
-        tree.add_children("Commands", items);
+        tree.add_children(items);
         tree
     }
 }
