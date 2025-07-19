@@ -124,16 +124,16 @@ impl CommandTree {
 
     pub fn get_help(&self) -> Text<'static> {
         let nav_help = [
-            ("PgDn", "Scroll down page"),
-            ("PgUp", "Scroll up page"),
+            ("Enter", "Show diff"),
+            ("Tab ", "Toggle folding"),
+            ("PgDn", "Move down page"),
+            ("PgUp", "Move up page"),
             ("j/🠋 ", "Move down"),
             ("k/🠉 ", "Move up"),
             ("l/🠊 ", "Next sibling"),
             ("h/🠈 ", "Prev sibling"),
             ("K", "Select parent"),
             ("@", "Select @ change"),
-            ("Ent", "Show diff"),
-            ("Tab", "Toggle folding"),
         ]
         .iter()
         .map(|(key, help)| (key.to_string(), help.to_string()))
@@ -141,7 +141,7 @@ impl CommandTree {
 
         let general_help = [
             ("Ctrl-r", "Refresh log tree"),
-            ("Esc", "Clear state"),
+            ("Esc", "Clear app state"),
             ("i", "Toggle --ignore-immutable"),
             ("?", "Show help"),
             ("q", "Quit"),
@@ -160,67 +160,73 @@ impl CommandTree {
         let items = vec![
             (
                 "Commands",
-                "Describe change",
-                vec![KeyCode::Char('d')],
-                CommandTreeNode::Action(Message::Describe),
-            ),
-            (
-                "Commands",
-                "New change",
-                vec![KeyCode::Char('n')],
-                CommandTreeNode::Action(Message::New),
-            ),
-            (
-                "Commands",
                 "Abandon change",
                 vec![KeyCode::Char('a')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Abandon",
+                "Selected change",
+                vec![KeyCode::Char('a'), KeyCode::Char('a')],
                 CommandTreeNode::Action(Message::Abandon),
             ),
             (
                 "Commands",
-                "Undo operation",
-                vec![KeyCode::Char('u')],
-                CommandTreeNode::Action(Message::Undo),
+                "Bookmark",
+                vec![KeyCode::Char('b')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Bookmark",
+                "Set",
+                vec![KeyCode::Char('b'), KeyCode::Char('s')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Bookmark set",
+                "Master for selected change",
+                vec![KeyCode::Char('b'), KeyCode::Char('s'), KeyCode::Char('m')],
+                CommandTreeNode::Action(Message::BookmarkSetMaster),
             ),
             (
                 "Commands",
                 "Commit change",
                 vec![KeyCode::Char('c')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Commit",
+                "Selected change",
+                vec![KeyCode::Char('c'), KeyCode::Char('c')],
                 CommandTreeNode::Action(Message::Commit),
             ),
             (
                 "Commands",
-                "Squash change",
-                vec![KeyCode::Char('s')],
-                CommandTreeNode::Action(Message::Squash),
+                "Describe change",
+                vec![KeyCode::Char('d')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Describe",
+                "Selected change",
+                vec![KeyCode::Char('d'), KeyCode::Char('d')],
+                CommandTreeNode::Action(Message::Describe),
             ),
             (
                 "Commands",
                 "Edit change",
                 vec![KeyCode::Char('e')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Edit",
+                "Selected change",
+                vec![KeyCode::Char('e'), KeyCode::Char('e')],
                 CommandTreeNode::Action(Message::Edit),
             ),
             (
                 "Commands",
-                "Git fetch",
-                vec![KeyCode::Char('f')],
-                CommandTreeNode::Action(Message::Fetch),
-            ),
-            (
-                "Commands",
-                "Git push",
-                vec![KeyCode::Char('p')],
-                CommandTreeNode::Action(Message::Push),
-            ),
-            (
-                "Commands",
-                "Set master bookmark",
-                vec![KeyCode::Char('m')],
-                CommandTreeNode::Action(Message::BookmarkSetMaster),
-            ),
-            (
-                "Commands",
-                "Git",
+                "Git commands",
                 vec![KeyCode::Char('g')],
                 CommandTreeNode::new_children(),
             ),
@@ -228,13 +234,55 @@ impl CommandTree {
                 "Git",
                 "Fetch",
                 vec![KeyCode::Char('g'), KeyCode::Char('f')],
-                CommandTreeNode::Action(Message::Fetch),
+                CommandTreeNode::Action(Message::GitFetch),
             ),
             (
                 "Git",
                 "Push",
                 vec![KeyCode::Char('g'), KeyCode::Char('p')],
-                CommandTreeNode::Action(Message::Push),
+                CommandTreeNode::Action(Message::GitPush),
+            ),
+            (
+                "Commands",
+                "New change",
+                vec![KeyCode::Char('n')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "New",
+                "After selected change",
+                vec![KeyCode::Char('n'), KeyCode::Char('n')],
+                CommandTreeNode::Action(Message::New),
+            ),
+            (
+                "New",
+                "Before selected change",
+                vec![KeyCode::Char('n'), KeyCode::Char('b')],
+                CommandTreeNode::Action(Message::NewBefore),
+            ),
+            (
+                "Commands",
+                "Squash change",
+                vec![KeyCode::Char('s')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Squash",
+                "Selected change into parent",
+                vec![KeyCode::Char('s'), KeyCode::Char('s')],
+                CommandTreeNode::Action(Message::Squash),
+            ),
+            (
+                "Commands",
+                "Undo operation",
+                vec![KeyCode::Char('u')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Undo",
+                "Last operation",
+                vec![KeyCode::Char('u'), KeyCode::Char('u')],
+                CommandTreeNode::Action(Message::Undo),
             ),
         ];
 
@@ -245,7 +293,7 @@ impl CommandTree {
 }
 
 fn render_help_text(entries: HelpEntries) -> Text<'static> {
-    const COL_WIDTH: usize = 28;
+    const COL_WIDTH: usize = 26;
 
     // Get lines for each column
     let columns: Vec<Vec<Line>> = entries

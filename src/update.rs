@@ -29,13 +29,14 @@ pub enum Message {
     Show,
     Describe,
     New,
+    NewBefore,
     Abandon,
     Undo,
     Commit,
     Squash,
     Edit,
-    Fetch,
-    Push,
+    GitFetch,
+    GitPush,
     BookmarkSetMaster,
 }
 
@@ -140,16 +141,17 @@ fn handle_msg(
         }
 
         // Commands
-        Message::Describe => model.jj_describe(term)?,
-        Message::New => model.jj_new()?,
         Message::Abandon => model.jj_abandon()?,
-        Message::Undo => model.jj_undo()?,
-        Message::Commit => model.jj_commit(term)?,
-        Message::Squash => model.jj_squash(term)?,
-        Message::Edit => model.jj_edit()?,
-        Message::Fetch => model.jj_fetch()?,
-        Message::Push => model.jj_push()?,
         Message::BookmarkSetMaster => model.jj_bookmark_set_master()?,
+        Message::Commit => model.jj_commit(term)?,
+        Message::Describe => model.jj_describe(term)?,
+        Message::Edit => model.jj_edit()?,
+        Message::GitFetch => model.jj_fetch()?,
+        Message::GitPush => model.jj_push()?,
+        Message::New => model.jj_new()?,
+        Message::NewBefore => model.jj_new_before()?,
+        Message::Squash => model.jj_squash(term)?,
+        Message::Undo => model.jj_undo()?,
     };
 
     Ok(None)

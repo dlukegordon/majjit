@@ -210,6 +210,12 @@ pub fn new(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandErr
     Ok(())
 }
 
+pub fn new_before(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
+    let args = ["new", "--no-edit", "--insert-before", change_id];
+    run_jj_command(global_args, &args)?;
+    Ok(())
+}
+
 pub fn abandon(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
     let args = ["abandon", change_id];
     run_jj_command(global_args, &args)?;

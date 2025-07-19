@@ -403,6 +403,14 @@ impl Model {
         self.handle_jj_command_result(result)
     }
 
+    pub fn jj_new_before(&mut self) -> Result<()> {
+        let Some(change_id) = self.get_selected_change_id() else {
+            return Ok(());
+        };
+        let result = jj_commands::new_before(&self.global_args, change_id);
+        self.handle_jj_command_result(result)
+    }
+
     pub fn jj_abandon(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
