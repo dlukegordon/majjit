@@ -1,5 +1,5 @@
 use crate::{
-    command_tree::{CommandTree, CommandTreeNode},
+    command_tree::{CommandTree, CommandTreeNode, display_error_lines},
     jj_commands::{self, JjCommandError},
     log_tree::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
     update::Message,
@@ -242,6 +242,7 @@ impl Model {
 
     pub fn clear(&mut self) {
         self.info_list = None;
+        self.command_keys.clear();
     }
 
     pub fn show_help(&mut self) {
@@ -251,7 +252,14 @@ impl Model {
     pub fn handle_command_key(&mut self, key_code: KeyCode) -> Option<Message> {
         self.command_keys.push(key_code);
 
-        let node = self.command_tree.get_node(&self.command_keys)?;
+        let node = match self.command_tree.get_node(&self.command_keys) {
+            None => {
+                self.command_keys.pop();
+                display_error_lines(&mut self.info_list, &key_code);
+                return None;
+            }
+            Some(node) => node,
+        };
         match node {
             CommandTreeNode::Children(children) => {
                 self.info_list = Some(children.get_help());

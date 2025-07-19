@@ -7,59 +7,6 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-fn render_help_text(entries: HelpEntries) -> Text<'static> {
-    const COL_WIDTH: usize = 28;
-
-    // Get lines for each column
-    let columns: Vec<Vec<Line>> = entries
-        .into_iter()
-        .map(|(group_help_text, help_group)| {
-            let mut col_lines = Vec::new();
-            col_lines.push(Line::from(vec![Span::styled(
-                format!("{group_help_text:COL_WIDTH$}"),
-                Style::default().fg(Color::Blue),
-            )]));
-            col_lines.extend(
-                help_group
-                    .into_iter()
-                    .map(|(key, help)| {
-                        let mut num_cols = key.len() + 1 + help.len();
-                        if !key.is_ascii() {
-                            num_cols -= 3;
-                        }
-                        let padding = " ".repeat(COL_WIDTH.saturating_sub(num_cols));
-                        Line::from(vec![
-                            Span::styled(key, Style::default().fg(Color::Green)),
-                            Span::raw(" "),
-                            Span::raw(help),
-                            Span::raw(padding),
-                        ])
-                    })
-                    .collect::<Vec<_>>(),
-            );
-            col_lines
-        })
-        .collect();
-
-    // Render the columns
-    let num_rows = columns.iter().map(|c| c.len()).max().unwrap();
-    let lines: Vec<Line> = (0..num_rows)
-        .map(|i| {
-            let mut spans: Vec<Span> = vec![Span::raw(" ")];
-
-            for col in &columns {
-                let empty_line = Line::from(Span::raw(" ".repeat(COL_WIDTH)));
-                let col_line = col.get(i).unwrap_or(&empty_line).clone();
-                spans.extend(col_line.spans)
-            }
-
-            Line::from(spans)
-        })
-        .collect();
-
-    lines.into()
-}
-
 type HelpEntries = IndexMap<String, Vec<(String, String)>>;
 
 #[derive(Debug, Clone)]
@@ -194,7 +141,7 @@ impl CommandTree {
 
         let general_help = [
             ("Ctrl-r", "Refresh log tree"),
-            ("Esc", "Clear info popup"),
+            ("Esc", "Clear state"),
             ("i", "Toggle --ignore-immutable"),
             ("?", "Show help"),
             ("q", "Quit"),
@@ -294,5 +241,84 @@ impl CommandTree {
         let mut tree = Self(CommandTreeNode::new_children());
         tree.add_children(items);
         tree
+    }
+}
+
+fn render_help_text(entries: HelpEntries) -> Text<'static> {
+    const COL_WIDTH: usize = 28;
+
+    // Get lines for each column
+    let columns: Vec<Vec<Line>> = entries
+        .into_iter()
+        .map(|(group_help_text, help_group)| {
+            let mut col_lines = Vec::new();
+            col_lines.push(Line::from(vec![Span::styled(
+                format!("{group_help_text:COL_WIDTH$}"),
+                Style::default().fg(Color::Blue),
+            )]));
+            col_lines.extend(
+                help_group
+                    .into_iter()
+                    .map(|(key, help)| {
+                        let mut num_cols = key.len() + 1 + help.len();
+                        if !key.is_ascii() {
+                            num_cols -= 3;
+                        }
+                        let padding = " ".repeat(COL_WIDTH.saturating_sub(num_cols));
+                        Line::from(vec![
+                            Span::styled(key, Style::default().fg(Color::Green)),
+                            Span::raw(" "),
+                            Span::raw(help),
+                            Span::raw(padding),
+                        ])
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            col_lines
+        })
+        .collect();
+
+    // Render the columns
+    let num_rows = columns.iter().map(|c| c.len()).max().unwrap();
+    let lines: Vec<Line> = (0..num_rows)
+        .map(|i| {
+            let mut spans: Vec<Span> = vec![Span::raw(" ")];
+
+            for col in &columns {
+                let empty_line = Line::from(Span::raw(" ".repeat(COL_WIDTH)));
+                let col_line = col.get(i).unwrap_or(&empty_line).clone();
+                spans.extend(col_line.spans)
+            }
+
+            Line::from(spans)
+        })
+        .collect();
+
+    lines.into()
+}
+
+pub fn display_error_lines(info_list: &mut Option<Text<'static>>, key_code: &KeyCode) {
+    let error_line = Line::from(vec![
+        Span::styled(" Unbound suffix: ", Style::default().fg(Color::Red)),
+        Span::raw("'"),
+        Span::styled(format!("{key_code}"), Style::default().fg(Color::Green)),
+        Span::raw("'"),
+    ]);
+    match info_list {
+        None => {
+            *info_list = Some(error_line.into());
+        }
+        Some(info_list) => {
+            let add_blank_line = info_list.lines.first().unwrap().spans[0] != error_line.spans[0];
+            if info_list.lines.last().unwrap().spans[0] == error_line.spans[0] {
+                info_list.lines.pop();
+                info_list.lines.pop();
+            }
+
+            if add_blank_line {
+                info_list.lines.push(Line::from(vec![]));
+            }
+            info_list.lines.push(error_line);
+        }
     }
 }
