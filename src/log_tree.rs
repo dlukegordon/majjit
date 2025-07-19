@@ -579,9 +579,6 @@ impl LogTreeNode for FileDiff {
 
     fn toggle_fold(&mut self, global_args: &GlobalArgs) -> Result<()> {
         self.unfolded = !self.unfolded;
-        if !self.unfolded || !matches!(self.status, FileDiffStatus::Modified) {
-            return Ok(());
-        }
 
         if !self.loaded {
             let diff_hunks =
@@ -712,9 +709,13 @@ impl DiffHunk {
             }
         }
 
-        if red.is_none() || green.is_none() {
-            bail!("Could not find diff hunk line ranges");
+        if red.is_none() {
+            red = Some("0".to_string());
         }
+        if green.is_none() {
+            green = Some("0".to_string());
+        }
+
         Ok((red.unwrap().parse()?, green.unwrap().parse()?))
     }
 
@@ -770,6 +771,17 @@ impl DiffHunk {
 
 impl LogTreeNode for DiffHunk {
     fn render(&self) -> Result<Text<'static>> {
+        let red_num_lines = if self.red_end == 0 {
+            0
+        } else {
+            self.red_end - self.red_start + 1
+        };
+        let green_num_lines = if self.green_end == 0 {
+            0
+        } else {
+            self.green_end - self.green_start + 1
+        };
+
         let line = Line::from(vec![
             Span::raw(self.graph_indent.clone()),
             fold_symbol(self.unfolded),
@@ -777,10 +789,7 @@ impl LogTreeNode for DiffHunk {
             Span::styled(
                 format!(
                     "@@ -{},{} +{},{} @@",
-                    self.red_start,
-                    self.red_end - self.red_start + 1,
-                    self.green_start,
-                    self.green_end - self.green_start + 1
+                    self.red_start, red_num_lines, self.green_start, green_num_lines,
                 ),
                 Style::default().fg(Color::Magenta),
             ),
