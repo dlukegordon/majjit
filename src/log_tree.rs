@@ -3,7 +3,7 @@ use crate::model::GlobalArgs;
 use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
 use ratatui::{
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
 };
 use regex::Regex;
@@ -342,8 +342,12 @@ impl LogTreeNode for Commit {
                 self.symbol.clone(),
                 if self.has_conflict {
                     Style::default().fg(Color::Red)
-                } else {
+                } else if self.current_working_copy {
                     Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::LightCyan)
                 },
             ),
             Span::raw(self.line1_graph_chars_part2.clone()),
