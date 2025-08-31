@@ -212,6 +212,8 @@ pub struct Commit {
     _commit_id: String,
     pub current_working_copy: bool,
     has_conflict: bool,
+    _empty: bool,
+    pub description_first_line: Option<String>,
     symbol: String,
     line1_graph_chars: String,
     line1_graph_chars_part2: String,
@@ -229,7 +231,7 @@ impl Commit {
     fn new(pretty_string: String) -> Result<Self> {
         let clean_string = strip_ansi(&pretty_string);
         let re_fields = Regex::new(
-            r"^([ │]*)(.)([ │]*)  ([k-z]{8,})\s+.*\s+([a-f0-9]{8,})\s*(\S*)\s*\n([ │├─╯╮]*)",
+            r"^([ │]*)(.)([ │]*)  ([k-z]{8,})\s+.*\s+([a-f0-9]{8,})\s*(\S*)\s*\n([ │├─╯╮]*)(\(empty\))?\s*(.*)",
         )?;
         let re_lines = Regex::new(r"^[ │]*\S+[ │]*(.*)\n[ │├─╯╮]*(.*)")?;
 
@@ -280,9 +282,21 @@ impl Commit {
             })
             .collect();
         graph_indent.pop(); // Even out with our spacing
+        let empty_capture = captures.get(8);
+        let description_string: String = captures
+            .get(9)
+            .ok_or_else(|| anyhow!("Cannot parse description string"))?
+            .as_str()
+            .into();
 
         let current_working_copy = symbol == "@";
         let has_conflict = conflict_status == "conflict";
+        let empty = empty_capture.is_some();
+        let description_first_line = if description_string == "(no description set)" {
+            None
+        } else {
+            Some(description_string)
+        };
 
         let captures = re_lines
             .captures(&pretty_string)
@@ -303,6 +317,8 @@ impl Commit {
             _commit_id: commit_id,
             current_working_copy,
             has_conflict,
+            _empty: empty,
+            description_first_line,
             symbol,
             line1_graph_chars,
             line1_graph_chars_part2,

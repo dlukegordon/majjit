@@ -237,7 +237,20 @@ pub fn commit(
     Ok(())
 }
 
-pub fn squash(
+pub fn squash_noninteractive(
+    global_args: &GlobalArgs,
+    change_id: &str,
+    maybe_file_path: Option<&str>,
+) -> Result<(), JjCommandError> {
+    let mut args = vec!["squash", "--revision", change_id];
+    if let Some(file_path) = maybe_file_path {
+        args.push(file_path);
+    }
+    run_jj_command(global_args, &args)?;
+    Ok(())
+}
+
+pub fn squash_interactive(
     global_args: &GlobalArgs,
     change_id: &str,
     maybe_file_path: Option<&str>,

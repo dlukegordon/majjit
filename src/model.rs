@@ -430,11 +430,26 @@ impl Model {
     }
 
     pub fn jj_squash(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let Some(change_id) = self.get_selected_change_id() else {
+        let tree_pos = self.get_selected_tree_position();
+        let Some(commit) = self.jj_log.get_tree_commit(&tree_pos) else {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
-        let result = jj_commands::squash(&self.global_args, change_id, maybe_file_path, term);
+
+        let result = if commit.description_first_line.is_none() {
+            jj_commands::squash_noninteractive(
+                &self.global_args,
+                &commit.change_id,
+                maybe_file_path,
+            )
+        } else {
+            jj_commands::squash_interactive(
+                &self.global_args,
+                &commit.change_id,
+                maybe_file_path,
+                term,
+            )
+        };
         self.handle_jj_command_result(result)
     }
 
