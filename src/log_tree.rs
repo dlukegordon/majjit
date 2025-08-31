@@ -1,4 +1,4 @@
-use crate::jj_commands;
+use crate::jj_commands::JjCommand;
 use crate::model::GlobalArgs;
 use ansi_to_tui::IntoText;
 use anyhow::{Error, Result, anyhow, bail};
@@ -159,7 +159,7 @@ pub enum CommitOrText {
 
 impl CommitOrText {
     fn load_all(global_args: &GlobalArgs, revset: &str) -> Result<Vec<Self>> {
-        let output = jj_commands::log(global_args, revset)?.stdout;
+        let output = JjCommand::log(revset, global_args.clone()).run()?;
         let mut lines = output.trim().lines();
         let re = Regex::new(r"^.+([k-z]{8})\s+.*\s+([a-f0-9]{8}).*$")?;
 
@@ -533,7 +533,7 @@ impl FileDiff {
         change_id: &str,
         graph_indent: &str,
     ) -> Result<Vec<Self>> {
-        let output = jj_commands::diff_summary(global_args, change_id)?.stdout;
+        let output = JjCommand::diff_summary(change_id, global_args.clone()).run()?;
         let lines: Vec<&str> = output.trim().lines().collect();
 
         let mut file_diffs = Vec::new();
@@ -748,7 +748,7 @@ impl DiffHunk {
         file: &str,
         graph_indent: &str,
     ) -> Result<Vec<Self>> {
-        let output = jj_commands::diff_file(global_args, change_id, file)?.stdout;
+        let output = JjCommand::diff_file(change_id, file, global_args.clone()).run()?;
         let output_lines: Vec<&str> = output.trim().lines().skip(1).collect();
 
         let separator_regex = Regex::new(r"\s*\.\.\.\s*")?;

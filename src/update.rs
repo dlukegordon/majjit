@@ -1,8 +1,8 @@
 use crate::model::Model;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
-use ratatui::{Terminal, backend::Backend};
-use std::time::Duration;
+use ratatui::{Terminal, prelude::CrosstermBackend};
+use std::{io::Stdout, time::Duration};
 
 const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
 
@@ -40,7 +40,7 @@ pub enum Message {
     BookmarkSetMaster,
 }
 
-pub fn update(terminal: &mut Terminal<impl Backend>, model: &mut Model) -> Result<()> {
+pub fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>, model: &mut Model) -> Result<()> {
     let mut current_msg = handle_event(model)?;
 
     while let Some(msg) = current_msg {
@@ -107,7 +107,7 @@ fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
 }
 
 fn handle_msg(
-    term: &mut Terminal<impl Backend>,
+    term: &mut Terminal<CrosstermBackend<Stdout>>,
     model: &mut Model,
     msg: Message,
 ) -> Result<Option<Message>> {

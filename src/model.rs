@@ -1,13 +1,15 @@
+use std::io::Stdout;
+
 use crate::{
     command_tree::{CommandTree, CommandTreeNode, display_error_lines},
-    jj_commands::{self, JjCommandError},
+    jj_commands::{JjCommand, JjCommandError},
     log_tree::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
     update::Message,
 };
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use crossterm::event::KeyCode;
-use ratatui::{Terminal, backend::Backend, layout::Rect, text::Text, widgets::ListState};
+use ratatui::{Terminal, layout::Rect, prelude::CrosstermBackend, text::Text, widgets::ListState};
 
 const LOG_LIST_SCROLL_PADDING: usize = 0;
 
@@ -18,7 +20,7 @@ pub enum State {
     Quit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GlobalArgs {
     pub repository: String,
     pub ignore_immutable: bool,
@@ -45,6 +47,8 @@ enum ScrollDirection {
     Up,
     Down,
 }
+
+type Term = Terminal<CrosstermBackend<Stdout>>;
 
 impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
@@ -378,122 +382,118 @@ impl Model {
         current_node
     }
 
-    pub fn jj_show(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+    pub fn jj_show(&mut self, term: &mut Term) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
-        let result = jj_commands::show(&self.global_args, change_id, maybe_file_path, term);
-        self.handle_jj_command_result_nosync(result)
+        let cmd = JjCommand::show(change_id, maybe_file_path, self.global_args.clone(), term);
+        self.run_jj_command_nosync(cmd)
     }
 
-    pub fn jj_describe(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+    pub fn jj_describe(&mut self, term: &mut Term) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::describe(&self.global_args, change_id, term);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::describe(change_id, self.global_args.clone(), term);
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_new(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::new(&self.global_args, change_id);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::new(change_id, self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_new_before(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::new_before(&self.global_args, change_id);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::new_before(change_id, self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_abandon(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::abandon(&self.global_args, change_id);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::abandon(change_id, self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_undo(&mut self) -> Result<()> {
-        let result = jj_commands::undo(&self.global_args);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::undo(self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
-    pub fn jj_commit(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
-        let result = jj_commands::commit(&self.global_args, term);
-        self.handle_jj_command_result(result)
+    pub fn jj_commit(&mut self, term: &mut Term) -> Result<()> {
+        let cmd = JjCommand::commit(self.global_args.clone(), term);
+        self.run_jj_command(cmd)
     }
 
-    pub fn jj_squash(&mut self, term: &mut Terminal<impl Backend>) -> Result<()> {
+    pub fn jj_squash(&mut self, term: &mut Term) -> Result<()> {
         let tree_pos = self.get_selected_tree_position();
         let Some(commit) = self.jj_log.get_tree_commit(&tree_pos) else {
             return Ok(());
         };
         let maybe_file_path = self.get_selected_file_path();
 
-        let result = if commit.description_first_line.is_none() {
-            jj_commands::squash_noninteractive(
-                &self.global_args,
+        let cmd = if commit.description_first_line.is_none() {
+            JjCommand::squash_noninteractive(
                 &commit.change_id,
                 maybe_file_path,
+                self.global_args.clone(),
             )
         } else {
-            jj_commands::squash_interactive(
-                &self.global_args,
+            JjCommand::squash_interactive(
                 &commit.change_id,
                 maybe_file_path,
+                self.global_args.clone(),
                 term,
             )
         };
-        self.handle_jj_command_result(result)
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_edit(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::edit(&self.global_args, change_id);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::edit(change_id, self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_fetch(&mut self) -> Result<()> {
-        let result = jj_commands::fetch(&self.global_args);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::fetch(self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_push(&mut self) -> Result<()> {
-        let result = jj_commands::push(&self.global_args);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::push(self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
     pub fn jj_bookmark_set_master(&mut self) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
-        let result = jj_commands::bookmark_set_master(&self.global_args, change_id);
-        self.handle_jj_command_result(result)
+        let cmd = JjCommand::bookmark_set_master(change_id, self.global_args.clone());
+        self.run_jj_command(cmd)
     }
 
-    pub fn handle_jj_command_result(
-        &mut self,
-        result: Result<String, JjCommandError>,
-    ) -> Result<()> {
-        self._handle_jj_command_result(result, true)
+    fn run_jj_command(&mut self, mut cmd: JjCommand) -> Result<()> {
+        let result = cmd.run();
+        self.handle_jj_command_result(result, true)
     }
 
-    pub fn handle_jj_command_result_nosync(
-        &mut self,
-        result: Result<String, JjCommandError>,
-    ) -> Result<()> {
-        self._handle_jj_command_result(result, false)
+    fn run_jj_command_nosync(&mut self, mut cmd: JjCommand) -> Result<()> {
+        let result = cmd.run();
+        self.handle_jj_command_result(result, false)
     }
 
-    pub fn _handle_jj_command_result(
+    fn handle_jj_command_result(
         &mut self,
         result: Result<String, JjCommandError>,
         sync_on_success: bool,
@@ -507,11 +507,7 @@ impl Model {
             }
             Err(err) => match err {
                 JjCommandError::Other { err } => Err(err),
-                JjCommandError::Failed {
-                    _args,
-                    _status,
-                    stderr,
-                } => {
+                JjCommandError::Failed { stderr } => {
                     self.info_list = Some(stderr.into_text()?);
                     Ok(())
                 }

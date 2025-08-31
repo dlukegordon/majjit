@@ -7,6 +7,8 @@ mod terminal;
 mod update;
 mod view;
 
+use std::io::Stdout;
+
 use crate::model::{Model, State};
 use crate::update::update;
 use crate::view::view;
@@ -14,7 +16,9 @@ use crate::view::view;
 use anyhow::Result;
 use clap::Parser;
 use cli::Args;
-use ratatui::{Terminal, backend::Backend};
+use jj_commands::JjCommand;
+use ratatui::Terminal;
+use ratatui::prelude::CrosstermBackend;
 
 fn main() {
     if let Err(err) = _main() {
@@ -25,7 +29,7 @@ fn main() {
 
 fn _main() -> Result<()> {
     let args = Args::parse();
-    let repository = jj_commands::ensure_valid_repo(&args.repository)?;
+    let repository = JjCommand::ensure_valid_repo(&args.repository)?;
     let model = Model::new(repository, args.revisions)?;
 
     let terminal = terminal::init_terminal()?;
@@ -35,7 +39,7 @@ fn _main() -> Result<()> {
     result
 }
 
-fn main_loop(mut model: Model, mut terminal: Terminal<impl Backend>) -> Result<()> {
+fn main_loop(mut model: Model, mut terminal: Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     while model.state != State::Quit {
         terminal.draw(|f| view(&mut model, f))?;
         update(&mut terminal, &mut model)?;

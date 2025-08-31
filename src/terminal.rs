@@ -8,9 +8,12 @@ use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
 };
-use std::{io::stdout, panic};
+use std::{
+    io::{Stdout, stdout},
+    panic,
+};
 
-pub fn init_terminal() -> Result<Terminal<impl Backend>> {
+pub fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     install_panic_hook();
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
