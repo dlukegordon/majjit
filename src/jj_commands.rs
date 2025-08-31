@@ -50,16 +50,24 @@ impl std::fmt::Display for JjCommandError {
 
 impl std::error::Error for JjCommandError {}
 
-fn run_jj_command(global_args: &GlobalArgs, args: &[&str]) -> Result<String, JjCommandError> {
+pub struct JjCommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+fn run_jj_command(
+    global_args: &GlobalArgs,
+    args: &[&str],
+) -> Result<JjCommandOutput, JjCommandError> {
     let mut command = get_jj_command(global_args);
     command.args(args);
     let output = command.output().map_err(JjCommandError::new_other)?;
 
+    let stderr = String::from_utf8_lossy(&output.stderr).into();
     if output.status.success() {
         let stdout = String::from_utf8(output.stdout).map_err(JjCommandError::new_other)?;
-        Ok(stdout)
+        Ok(JjCommandOutput { stdout, stderr })
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).into();
         Err(JjCommandError::new_failed(args, output.status, stderr))
     }
 }
@@ -68,7 +76,7 @@ fn run_jj_command_interactive(
     global_args: &GlobalArgs,
     args: &[&str],
     term: &mut Terminal<impl Backend>,
-) -> Result<(), JjCommandError> {
+) -> Result<JjCommandOutput, JjCommandError> {
     let mut command = get_jj_command(global_args);
     command.args(args);
     command.stderr(std::process::Stdio::piped());
@@ -88,7 +96,10 @@ fn run_jj_command_interactive(
     terminal::takeover_terminal(term).map_err(JjCommandError::new_other)?;
 
     if status.success() {
-        Ok(())
+        Ok(JjCommandOutput {
+            stdout: "".to_string(),
+            stderr,
+        })
     } else {
         Err(JjCommandError::new_failed(args, status, stderr))
     }
@@ -162,12 +173,15 @@ fn get_jj_command(global_args: &GlobalArgs) -> Command {
     command
 }
 
-pub fn log(global_args: &GlobalArgs, revset: &str) -> Result<String, JjCommandError> {
+pub fn log(global_args: &GlobalArgs, revset: &str) -> Result<JjCommandOutput, JjCommandError> {
     let args = ["log", "--revisions", revset];
     run_jj_command(global_args, &args)
 }
 
-pub fn diff_summary(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
+pub fn diff_summary(
+    global_args: &GlobalArgs,
+    change_id: &str,
+) -> Result<JjCommandOutput, JjCommandError> {
     let args = ["diff", "--revisions", change_id, "--summary"];
     run_jj_command(global_args, &args)
 }
@@ -176,7 +190,7 @@ pub fn diff_file(
     global_args: &GlobalArgs,
     change_id: &str,
     file: &str,
-) -> Result<String, JjCommandError> {
+) -> Result<JjCommandOutput, JjCommandError> {
     let args = ["diff", "--revisions", change_id, file];
     run_jj_command(global_args, &args)
 }
@@ -186,68 +200,61 @@ pub fn show(
     change_id: &str,
     maybe_file_path: Option<&str>,
     term: &mut Terminal<impl Backend>,
-) -> Result<(), JjCommandError> {
+) -> Result<String, JjCommandError> {
     let args = match maybe_file_path {
         None => vec!["show", change_id],
         Some(file_path) => vec!["diff", "--revisions", change_id, file_path],
     };
-    run_jj_command_interactive(global_args, &args, term)?;
-    Ok(())
+    Ok(run_jj_command_interactive(global_args, &args, term)?.stderr)
 }
 
 pub fn describe(
     global_args: &GlobalArgs,
     change_id: &str,
-    terminal: &mut Terminal<impl Backend>,
-) -> Result<(), JjCommandError> {
+    term: &mut Terminal<impl Backend>,
+) -> Result<String, JjCommandError> {
     let args = ["describe", change_id];
-    run_jj_command_interactive(global_args, &args, terminal)
+    Ok(run_jj_command_interactive(global_args, &args, term)?.stderr)
 }
 
-pub fn new(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
+pub fn new(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
     let args = ["new", change_id];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
-pub fn new_before(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
+pub fn new_before(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
     let args = ["new", "--no-edit", "--insert-before", change_id];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
-pub fn abandon(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
+pub fn abandon(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
     let args = ["abandon", change_id];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
-pub fn undo(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
+pub fn undo(global_args: &GlobalArgs) -> Result<String, JjCommandError> {
     let args = ["undo"];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
 pub fn commit(
     global_args: &GlobalArgs,
     term: &mut Terminal<impl Backend>,
-) -> Result<(), JjCommandError> {
+) -> Result<String, JjCommandError> {
     let args = ["commit"];
-    run_jj_command_interactive(global_args, &args, term)?;
-    Ok(())
+    Ok(run_jj_command_interactive(global_args, &args, term)?.stderr)
 }
 
 pub fn squash_noninteractive(
     global_args: &GlobalArgs,
     change_id: &str,
     maybe_file_path: Option<&str>,
-) -> Result<(), JjCommandError> {
+) -> Result<String, JjCommandError> {
     let mut args = vec!["squash", "--revision", change_id];
     if let Some(file_path) = maybe_file_path {
         args.push(file_path);
     }
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
 pub fn squash_interactive(
@@ -255,38 +262,33 @@ pub fn squash_interactive(
     change_id: &str,
     maybe_file_path: Option<&str>,
     term: &mut Terminal<impl Backend>,
-) -> Result<(), JjCommandError> {
+) -> Result<String, JjCommandError> {
     let mut args = vec!["squash", "--revision", change_id];
     if let Some(file_path) = maybe_file_path {
         args.push(file_path);
     }
-    run_jj_command_interactive(global_args, &args, term)?;
-    Ok(())
+    Ok(run_jj_command_interactive(global_args, &args, term)?.stderr)
 }
 
-pub fn edit(global_args: &GlobalArgs, change_id: &str) -> Result<(), JjCommandError> {
+pub fn edit(global_args: &GlobalArgs, change_id: &str) -> Result<String, JjCommandError> {
     let args = ["edit", change_id];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
-pub fn fetch(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
+pub fn fetch(global_args: &GlobalArgs) -> Result<String, JjCommandError> {
     let args = ["git", "fetch"];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
-pub fn push(global_args: &GlobalArgs) -> Result<(), JjCommandError> {
+pub fn push(global_args: &GlobalArgs) -> Result<String, JjCommandError> {
     let args = ["git", "push"];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }
 
 pub fn bookmark_set_master(
     global_args: &GlobalArgs,
     change_id: &str,
-) -> Result<(), JjCommandError> {
+) -> Result<String, JjCommandError> {
     let args = ["bookmark", "set", "master", "--revision", change_id];
-    run_jj_command(global_args, &args)?;
-    Ok(())
+    Ok(run_jj_command(global_args, &args)?.stderr)
 }

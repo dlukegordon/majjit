@@ -479,31 +479,31 @@ impl Model {
         self.handle_jj_command_result(result)
     }
 
-    pub fn handle_jj_command_result(&mut self, result: Result<(), JjCommandError>) -> Result<()> {
+    pub fn handle_jj_command_result(
+        &mut self,
+        result: Result<String, JjCommandError>,
+    ) -> Result<()> {
         self._handle_jj_command_result(result, true)
     }
 
     pub fn handle_jj_command_result_nosync(
         &mut self,
-        result: Result<(), JjCommandError>,
+        result: Result<String, JjCommandError>,
     ) -> Result<()> {
         self._handle_jj_command_result(result, false)
     }
 
     pub fn _handle_jj_command_result(
         &mut self,
-        result: Result<(), JjCommandError>,
+        result: Result<String, JjCommandError>,
         sync_on_success: bool,
     ) -> Result<()> {
         self.clear();
 
         match result {
-            Ok(_) => {
-                if sync_on_success {
-                    self.sync()
-                } else {
-                    Ok(())
-                }
+            Ok(output) => {
+                self.info_list = Some(output.into_text()?);
+                if sync_on_success { self.sync() } else { Ok(()) }
             }
             Err(err) => match err {
                 JjCommandError::Other { err } => Err(err),
