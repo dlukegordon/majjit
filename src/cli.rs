@@ -1,6 +1,6 @@
 use clap::Parser;
 
-const DEFAULT_REVSET: &str = "root() | remote_bookmarks() | ancestors(immutable_heads().., 7)";
+const DEFAULT_REVSET: &str = "root() | remote_bookmarks() | ancestors(immutable_heads().., 50)";
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Majjit: Magit for jj!")]
