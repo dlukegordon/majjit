@@ -1,8 +1,7 @@
-use crate::model::Model;
+use crate::{model::Model, terminal::Term};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
-use ratatui::{Terminal, prelude::CrosstermBackend};
-use std::{io::Stdout, time::Duration};
+use std::time::Duration;
 
 const EVENT_POLL_DURATION: Duration = Duration::from_millis(50);
 
@@ -40,12 +39,14 @@ pub enum Message {
     BookmarkSetMaster,
 }
 
-pub fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>, model: &mut Model) -> Result<()> {
-    let mut current_msg = handle_event(model)?;
+pub fn update(terminal: Term, model: &mut Model) -> Result<()> {
+    model.handle_jj_command_queue()?;
 
+    let mut current_msg = handle_event(model)?;
     while let Some(msg) = current_msg {
-        current_msg = handle_msg(terminal, model, msg)?;
+        current_msg = handle_msg(terminal.clone(), model, msg)?;
     }
+
     Ok(())
 }
 
@@ -106,14 +107,10 @@ fn handle_mouse(mouse: event::MouseEvent) -> Option<Message> {
     }
 }
 
-fn handle_msg(
-    term: &mut Terminal<CrosstermBackend<Stdout>>,
-    model: &mut Model,
-    msg: Message,
-) -> Result<Option<Message>> {
+fn handle_msg(term: Term, model: &mut Model, msg: Message) -> Result<Option<Message>> {
     match msg {
         // General
-        Message::Refresh => model.sync()?,
+        Message::Refresh => model.refresh()?,
         Message::Clear => model.clear(),
         Message::ToggleIgnoreImmutable => model.toggle_ignore_immutable(),
         Message::ShowHelp => model.show_help(),

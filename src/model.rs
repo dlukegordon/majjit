@@ -1,15 +1,18 @@
-use std::io::Stdout;
-
 use crate::{
     command_tree::{CommandTree, CommandTreeNode, display_error_lines},
     jj_commands::{JjCommand, JjCommandError},
     log_tree::{DIFF_HUNK_LINE_IDX, JjLog, TreePosition, get_parent_tree_position},
+    terminal::Term,
     update::Message,
 };
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use crossterm::event::KeyCode;
-use ratatui::{Terminal, layout::Rect, prelude::CrosstermBackend, text::Text, widgets::ListState};
+use ratatui::{
+    layout::Rect,
+    text::{Line, Text},
+    widgets::ListState,
+};
 
 const LOG_LIST_SCROLL_PADDING: usize = 0;
 
@@ -33,6 +36,7 @@ pub struct Model {
     pub state: State,
     pub command_tree: CommandTree,
     command_keys: Vec<KeyCode>,
+    queued_jj_command: Option<JjCommand>,
     jj_log: JjLog,
     pub log_list: Vec<Text<'static>>,
     pub log_list_state: ListState,
@@ -48,14 +52,13 @@ enum ScrollDirection {
     Down,
 }
 
-type Term = Terminal<CrosstermBackend<Stdout>>;
-
 impl Model {
     pub fn new(repository: String, revset: String) -> Result<Self> {
         let mut model = Self {
             state: State::default(),
             command_tree: CommandTree::new(),
             command_keys: Vec::new(),
+            queued_jj_command: None,
             jj_log: JjLog::new()?,
             log_list: Vec::new(),
             log_list_state: ListState::default(),
@@ -97,6 +100,12 @@ impl Model {
 
     fn sync_log_list(&mut self) -> Result<()> {
         (self.log_list, self.log_list_tree_positions) = self.jj_log.flatten_log()?;
+        Ok(())
+    }
+
+    pub fn refresh(&mut self) -> Result<()> {
+        self.sync()?;
+        self.info_list = Some(Text::from("Refreshed."));
         Ok(())
     }
 
@@ -382,7 +391,7 @@ impl Model {
         current_node
     }
 
-    pub fn jj_show(&mut self, term: &mut Term) -> Result<()> {
+    pub fn jj_show(&mut self, term: Term) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
@@ -391,12 +400,12 @@ impl Model {
         self.run_jj_command_nosync(cmd)
     }
 
-    pub fn jj_describe(&mut self, term: &mut Term) -> Result<()> {
+    pub fn jj_describe(&mut self, term: Term) -> Result<()> {
         let Some(change_id) = self.get_selected_change_id() else {
             return Ok(());
         };
         let cmd = JjCommand::describe(change_id, self.global_args.clone(), term);
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_new(&mut self) -> Result<()> {
@@ -404,7 +413,7 @@ impl Model {
             return Ok(());
         };
         let cmd = JjCommand::new(change_id, self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_new_before(&mut self) -> Result<()> {
@@ -412,7 +421,7 @@ impl Model {
             return Ok(());
         };
         let cmd = JjCommand::new_before(change_id, self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_abandon(&mut self) -> Result<()> {
@@ -420,20 +429,20 @@ impl Model {
             return Ok(());
         };
         let cmd = JjCommand::abandon(change_id, self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_undo(&mut self) -> Result<()> {
         let cmd = JjCommand::undo(self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
-    pub fn jj_commit(&mut self, term: &mut Term) -> Result<()> {
+    pub fn jj_commit(&mut self, term: Term) -> Result<()> {
         let cmd = JjCommand::commit(self.global_args.clone(), term);
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
-    pub fn jj_squash(&mut self, term: &mut Term) -> Result<()> {
+    pub fn jj_squash(&mut self, term: Term) -> Result<()> {
         let tree_pos = self.get_selected_tree_position();
         let Some(commit) = self.jj_log.get_tree_commit(&tree_pos) else {
             return Ok(());
@@ -454,7 +463,7 @@ impl Model {
                 term,
             )
         };
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_edit(&mut self) -> Result<()> {
@@ -462,17 +471,17 @@ impl Model {
             return Ok(());
         };
         let cmd = JjCommand::edit(change_id, self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_fetch(&mut self) -> Result<()> {
         let cmd = JjCommand::fetch(self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_push(&mut self) -> Result<()> {
         let cmd = JjCommand::push(self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
     pub fn jj_bookmark_set_master(&mut self) -> Result<()> {
@@ -480,21 +489,33 @@ impl Model {
             return Ok(());
         };
         let cmd = JjCommand::bookmark_set_master(change_id, self.global_args.clone());
-        self.run_jj_command(cmd)
+        self.queue_jj_command(cmd)
     }
 
-    fn run_jj_command(&mut self, mut cmd: JjCommand) -> Result<()> {
-        let result = cmd.run();
-        self.handle_jj_command_result(result, true)
+    fn queue_jj_command(&mut self, cmd: JjCommand) -> Result<()> {
+        let mut lines = cmd.to_lines();
+        lines.push(Line::raw("Running..."));
+        self.info_list = Some(Text::from(lines));
+        self.queued_jj_command = Some(cmd);
+        Ok(())
+    }
+
+    pub fn handle_jj_command_queue(&mut self) -> Result<()> {
+        if let Some(mut cmd) = self.queued_jj_command.take() {
+            let result = cmd.run();
+            self.handle_jj_command_result(&cmd, result, true)?
+        }
+        Ok(())
     }
 
     fn run_jj_command_nosync(&mut self, mut cmd: JjCommand) -> Result<()> {
         let result = cmd.run();
-        self.handle_jj_command_result(result, false)
+        self.handle_jj_command_result(&cmd, result, false)
     }
 
     fn handle_jj_command_result(
         &mut self,
+        cmd: &JjCommand,
         result: Result<String, JjCommandError>,
         sync_on_success: bool,
     ) -> Result<()> {
@@ -502,7 +523,10 @@ impl Model {
 
         match result {
             Ok(output) => {
-                self.info_list = Some(output.into_text()?);
+                let mut lines = cmd.to_lines();
+                lines.extend(output.into_text()?.lines);
+                self.info_list = Some(Text::from(lines));
+
                 if sync_on_success { self.sync() } else { Ok(()) }
             }
             Err(err) => match err {

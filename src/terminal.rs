@@ -4,27 +4,30 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{
-    Terminal,
-    backend::{Backend, CrosstermBackend},
-};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
+    cell::RefCell,
     io::{Stdout, stdout},
     panic,
+    rc::Rc,
 };
 
-pub fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
+pub type Term = Rc<RefCell<Terminal<CrosstermBackend<Stdout>>>>;
+
+pub fn init_terminal() -> Result<Term> {
     install_panic_hook();
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-    let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let terminal = Rc::new(RefCell::new(Terminal::new(
+        CrosstermBackend::new(stdout()),
+    )?));
     Ok(terminal)
 }
 
-pub fn takeover_terminal(terminal: &mut Terminal<impl Backend>) -> Result<()> {
+pub fn takeover_terminal(terminal: Term) -> Result<()> {
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-    terminal.clear()?;
+    terminal.borrow_mut().clear()?;
     Ok(())
 }
 

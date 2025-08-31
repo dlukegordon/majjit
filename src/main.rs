@@ -7,8 +7,6 @@ mod terminal;
 mod update;
 mod view;
 
-use std::io::Stdout;
-
 use crate::model::{Model, State};
 use crate::update::update;
 use crate::view::view;
@@ -17,8 +15,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::Args;
 use jj_commands::JjCommand;
-use ratatui::Terminal;
-use ratatui::prelude::CrosstermBackend;
+use terminal::Term;
 
 fn main() {
     if let Err(err) = _main() {
@@ -39,10 +36,10 @@ fn _main() -> Result<()> {
     result
 }
 
-fn main_loop(mut model: Model, mut terminal: Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
+fn main_loop(mut model: Model, terminal: Term) -> Result<()> {
     while model.state != State::Quit {
-        terminal.draw(|f| view(&mut model, f))?;
-        update(&mut terminal, &mut model)?;
+        terminal.borrow_mut().draw(|f| view(&mut model, f))?;
+        update(terminal.clone(), &mut model)?;
     }
     Ok(())
 }

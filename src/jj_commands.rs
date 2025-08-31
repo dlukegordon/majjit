@@ -1,30 +1,23 @@
 use crate::model::GlobalArgs;
-use crate::terminal;
+use crate::terminal::{self, Term};
 use anyhow::{Result, anyhow};
-use ratatui::{Terminal, prelude::CrosstermBackend};
-use std::{
-    io::{Read, Stdout},
-    process::Command,
-};
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
+use std::{io::Read, process::Command};
 
-pub struct JjCommand<'a> {
+#[derive(Debug)]
+pub struct JjCommand {
     args: Vec<String>,
     global_args: GlobalArgs,
-    interactive_term: Option<&'a mut Terminal<CrosstermBackend<Stdout>>>,
+    interactive_term: Option<Term>,
     return_output: ReturnOutput,
 }
 
-impl std::fmt::Display for JjCommand<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "> jj {:?}", self.args)
-    }
-}
-
-impl<'a> JjCommand<'a> {
+impl JjCommand {
     fn _new(
         args: &[&str],
         global_args: GlobalArgs,
-        interactive_term: Option<&'a mut Terminal<CrosstermBackend<Stdout>>>,
+        interactive_term: Option<Term>,
         return_output: ReturnOutput,
     ) -> Self {
         Self {
@@ -35,10 +28,20 @@ impl<'a> JjCommand<'a> {
         }
     }
 
+    pub fn to_lines(&self) -> Vec<Line<'static>> {
+        let line = Line::from(vec![
+            Span::styled("❯", Style::default().fg(Color::Yellow)),
+            Span::raw(" jj "),
+            Span::raw(self.args.join(" ")),
+        ]);
+        let blank_line = Line::raw("");
+        vec![line, blank_line]
+    }
+
     pub fn run(&mut self) -> Result<String, JjCommandError> {
         let output = match &self.interactive_term {
             None => self.run_noninteractive(),
-            Some(..) => self.run_interactive(),
+            Some(term) => self.run_interactive(term.clone()),
         }?;
         match self.return_output {
             ReturnOutput::Stdout => Ok(output.stdout),
@@ -60,7 +63,7 @@ impl<'a> JjCommand<'a> {
         }
     }
 
-    fn run_interactive(&mut self) -> Result<JjCommandOutput, JjCommandError> {
+    fn run_interactive(&mut self, term: Term) -> Result<JjCommandOutput, JjCommandError> {
         let mut command = self.base_command();
         command.args(self.args.clone());
         command.stderr(std::process::Stdio::piped());
@@ -69,6 +72,7 @@ impl<'a> JjCommand<'a> {
 
         let mut child = command.spawn().map_err(JjCommandError::new_other)?;
         let status = child.wait().map_err(JjCommandError::new_other)?;
+
         let mut stderr = String::new();
         child
             .stderr
@@ -76,8 +80,8 @@ impl<'a> JjCommand<'a> {
             .ok_or_else(|| JjCommandError::new_other(anyhow!("No stderr")))?
             .read_to_string(&mut stderr)
             .map_err(JjCommandError::new_other)?;
+        stderr = strip_ansi_escapes::strip_str(stderr);
 
-        let term = self.interactive_term.as_mut().unwrap();
         terminal::takeover_terminal(term).map_err(JjCommandError::new_other)?;
 
         if status.success() {
@@ -146,7 +150,7 @@ impl<'a> JjCommand<'a> {
         change_id: &str,
         maybe_file_path: Option<&str>,
         global_args: GlobalArgs,
-        term: &'a mut Terminal<CrosstermBackend<Stdout>>,
+        term: Term,
     ) -> Self {
         let args = match maybe_file_path {
             None => vec!["show", change_id],
@@ -155,11 +159,7 @@ impl<'a> JjCommand<'a> {
         Self::_new(&args, global_args, Some(term), ReturnOutput::Stderr)
     }
 
-    pub fn describe(
-        change_id: &str,
-        global_args: GlobalArgs,
-        term: &'a mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Self {
+    pub fn describe(change_id: &str, global_args: GlobalArgs, term: Term) -> Self {
         let args = ["describe", change_id];
         Self::_new(&args, global_args, Some(term), ReturnOutput::Stderr)
     }
@@ -184,10 +184,7 @@ impl<'a> JjCommand<'a> {
         Self::_new(&args, global_args, None, ReturnOutput::Stderr)
     }
 
-    pub fn commit(
-        global_args: GlobalArgs,
-        term: &'a mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Self {
+    pub fn commit(global_args: GlobalArgs, term: Term) -> Self {
         let args = ["commit"];
         Self::_new(&args, global_args, Some(term), ReturnOutput::Stderr)
     }
@@ -208,7 +205,7 @@ impl<'a> JjCommand<'a> {
         change_id: &str,
         maybe_file_path: Option<&str>,
         global_args: GlobalArgs,
-        term: &'a mut Terminal<CrosstermBackend<Stdout>>,
+        term: Term,
     ) -> Self {
         let mut args = vec!["squash", "--revision", change_id];
         if let Some(file_path) = maybe_file_path {
