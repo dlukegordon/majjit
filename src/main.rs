@@ -1,3 +1,4 @@
+mod ansi;
 mod cli;
 mod command_tree;
 mod jj_commands;

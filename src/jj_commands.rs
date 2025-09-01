@@ -1,3 +1,4 @@
+use crate::ansi::strip_non_style_ansi;
 use crate::model::GlobalArgs;
 use crate::terminal::{self, Term};
 use anyhow::{Result, anyhow};
@@ -80,7 +81,7 @@ impl JjCommand {
             .ok_or_else(|| JjCommandError::new_other(anyhow!("No stderr")))?
             .read_to_string(&mut stderr)
             .map_err(JjCommandError::new_other)?;
-        stderr = strip_ansi_escapes::strip_str(stderr);
+        stderr = strip_non_style_ansi(&stderr);
 
         terminal::takeover_terminal(term).map_err(JjCommandError::new_other)?;
 

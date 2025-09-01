@@ -54,8 +54,8 @@ pub fn view(model: &mut Model, frame: &mut Frame) {
         let info_list = List::new(info_list.clone()).block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Blue)),
+                .border_type(BorderType::Thick)
+                .border_style(Style::default().fg(Color::DarkGray)),
         );
         frame.render_widget(info_list, layout[2]);
     }

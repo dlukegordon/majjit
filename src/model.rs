@@ -532,21 +532,24 @@ impl Model {
     ) -> Result<()> {
         self.clear();
 
+        let mut lines = cmd.to_lines();
+
         match result {
             Ok(output) => {
-                let mut lines = cmd.to_lines();
                 lines.extend(output.into_text()?.lines);
-                self.info_list = Some(Text::from(lines));
-
-                if sync_on_success { self.sync() } else { Ok(()) }
+                if sync_on_success {
+                    self.sync()?
+                }
             }
             Err(err) => match err {
-                JjCommandError::Other { err } => Err(err),
+                JjCommandError::Other { err } => return Err(err),
                 JjCommandError::Failed { stderr } => {
-                    self.info_list = Some(stderr.into_text()?);
-                    Ok(())
+                    lines.extend(stderr.into_text()?.lines);
                 }
             },
-        }
+        };
+
+        self.info_list = Some(Text::from(lines));
+        Ok(())
     }
 }
