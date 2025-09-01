@@ -32,6 +32,7 @@ pub enum Message {
     Abandon,
     Undo,
     Commit,
+    Restore,
     Squash,
     Edit,
     GitFetch,
@@ -147,6 +148,7 @@ fn handle_msg(term: Term, model: &mut Model, msg: Message) -> Result<Option<Mess
         Message::GitPush => model.jj_push()?,
         Message::New => model.jj_new()?,
         Message::NewBefore => model.jj_new_before()?,
+        Message::Restore => model.jj_restore()?,
         Message::Squash => model.jj_squash(term)?,
         Message::Undo => model.jj_undo()?,
     };

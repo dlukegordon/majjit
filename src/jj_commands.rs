@@ -189,6 +189,18 @@ impl JjCommand {
         Self::_new(&args, global_args, Some(term), ReturnOutput::Stderr)
     }
 
+    pub fn restore(
+        change_id: &str,
+        maybe_file_path: Option<&str>,
+        global_args: GlobalArgs,
+    ) -> Self {
+        let mut args = vec!["restore", "--changes-in", change_id];
+        if let Some(file_path) = maybe_file_path {
+            args.push(file_path);
+        }
+        Self::_new(&args, global_args, None, ReturnOutput::Stderr)
+    }
+
     pub fn squash_noninteractive(
         change_id: &str,
         maybe_file_path: Option<&str>,

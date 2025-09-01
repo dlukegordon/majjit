@@ -262,6 +262,18 @@ impl CommandTree {
             ),
             (
                 "Commands",
+                "Restore change",
+                vec![KeyCode::Char('r')],
+                CommandTreeNode::new_children(),
+            ),
+            (
+                "Restore",
+                "Selected change",
+                vec![KeyCode::Char('r'), KeyCode::Char('r')],
+                CommandTreeNode::Action(Message::Restore),
+            ),
+            (
+                "Commands",
                 "Squash change",
                 vec![KeyCode::Char('s')],
                 CommandTreeNode::new_children(),

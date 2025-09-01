@@ -105,7 +105,7 @@ impl Model {
 
     pub fn refresh(&mut self) -> Result<()> {
         self.sync()?;
-        self.info_list = Some(Text::from("Refreshed."));
+        self.info_list = Some(Text::from("Refreshed"));
         Ok(())
     }
 
@@ -439,6 +439,17 @@ impl Model {
 
     pub fn jj_commit(&mut self, term: Term) -> Result<()> {
         let cmd = JjCommand::commit(self.global_args.clone(), term);
+        self.queue_jj_command(cmd)
+    }
+
+    pub fn jj_restore(&mut self) -> Result<()> {
+        let tree_pos = self.get_selected_tree_position();
+        let Some(commit) = self.jj_log.get_tree_commit(&tree_pos) else {
+            return Ok(());
+        };
+        let maybe_file_path = self.get_selected_file_path();
+
+        let cmd = JjCommand::restore(&commit.change_id, maybe_file_path, self.global_args.clone());
         self.queue_jj_command(cmd)
     }
 
